@@ -13,7 +13,7 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._router = {};
   this._cache = {};
   this._subscriptions = {};
-  this._servers = null;
+  this._servers = [];
   this._hasLoadedServers = false;
 
   this._versionClient.on('change', function(versionObject) {
