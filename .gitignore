@@ -1,0 +1,5 @@
+node_modules
+.peers
+.registry
+default.etcd/
+npm-debug.log

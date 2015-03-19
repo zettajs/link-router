@@ -1,0 +1,18 @@
+{
+  "name": "proxy_server",
+  "version": "0.0.0",
+  "description": "Proxy server component for zetta multi cloud",
+  "main": "proxy_server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "node-etcd": "^3.0.2",
+    "rx": "^2.3.25"
+  },
+  "devDependencies": {
+    "mocha": "^2.2.1"
+  }
+}
