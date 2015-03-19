@@ -17,7 +17,7 @@ MockEtcd.prototype.get = function(key, cb) {
     }
     cb(null, result); 
   } else {
-    cb(new Error("No Key Found.")); 
+    cb(null, []); 
   }  
 };
 
@@ -84,7 +84,7 @@ MockEtcd.prototype._trigger = function(key, value) {
   }
   
   watcherValues.forEach(function(watcher) {
-    watcher.emit('change', value);  
+    watcher.emit('change', { node: { value: value}});  
   });
 }
 

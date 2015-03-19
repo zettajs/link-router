@@ -15,6 +15,8 @@ describe('Proxy', function() {
   var etcd = null;
   var target = null;
   var proxyUrl = null;
+  var newTarget = null;
+  var serviceRegistryClient = null;
   
   beforeEach(function(done) {
     etcd = new MockEtcd();
@@ -22,7 +24,7 @@ describe('Proxy', function() {
     etcd.keyValuePairs['/zetta/version'] = { value: '{"version":"1"}' };
     
     var versionClient = new VersionClient({ client: etcd });
-    var serviceRegistryClient = new ServiceRegistryClient({ client: etcd });
+    serviceRegistryClient = new ServiceRegistryClient({ client: etcd });
     var routerClient = new RouterClient({ client: etcd });
 
     target = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });
@@ -60,6 +62,9 @@ describe('Proxy', function() {
     target.httpServer.server.close();
     hub.httpServer.server.close();
     proxy._server.close();
+    if(newTarget) {
+      newTarget.httpServer.server.close();
+    }
     done();  
   });
    
@@ -83,5 +88,45 @@ describe('Proxy', function() {
     });
 
     hub.listen(0);
+  });
+
+  it('will properly route to new versions.', function(done) {
+    var count = 0;
+    newTarget = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() })
+    function checkConnectionCount() {
+      if(count == 2) {
+        done(); 
+      }  
+    }
+
+    newTarget.name('target.2');
+    newTarget.silent();
+
+
+    newTarget.listen(0, function(err) {
+      if(err) {
+        return done(err);
+      }
+      
+      var cloud = 'http://localhost:' + newTarget.httpServer.server.address().port;
+      serviceRegistryClient.add('cloud-target', cloud, '2');
+      etcd.keyValuePairs['/zetta/version'] = { value: '{"version":"2"}' };
+      etcd._trigger('/zetta/version', '{"version":"2"}');
+      etcd._trigger('/services/zetta', '{"foo":"foo"}');
+
+      hub.pubsub.subscribe('_peer/connect', function(topic, data) {
+        count++;
+        checkConnectionCount();
+      });
+
+      newTarget.pubsub.subscribe('_peer/connect', function(topic, data) {
+        count++;
+        checkConnectionCount();
+      });
+
+      hub.link(proxyUrl);
+      hub.listen(0);
+    });
+      
   });
 });

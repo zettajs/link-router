@@ -63,4 +63,15 @@ describe('Router client', function() {
       done();
     }); 
   });
+
+  it('emits change events', function(done) {
+    var value = [{ "value": '{"type":"cloud-target-1","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}, { "value": '{"type":"cloud-target","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}]; 
+    client._client.keyValuePairs[client._etcDirectory] = value;
+
+    client.on('change', function() {
+      done();  
+    });    
+
+    client._client._trigger(client._etcDirectory, '{"foo":"foo"}');
+  });
 });

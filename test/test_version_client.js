@@ -19,4 +19,15 @@ describe('Version client', function() {
       done();
     });   
   });
+
+  it('emits change event', function(done) {
+    var version = { value: '{"version":"1"}'};
+    client._client.keyValuePairs[client._etcdDirectory] = version;
+    
+    client.on('change', function() {
+      done();
+    });   
+
+    client._client._trigger('/zetta/version', '{"version":"foo"}');
+  });
 });
