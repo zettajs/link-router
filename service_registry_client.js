@@ -89,7 +89,8 @@ ServiceRegistry.prototype.add = function(type, serverUrl, version, cb) {
 
 ServiceRegistry.prototype.remove = function(type, serverUrl, cb) {
 
-  this._client.del(this._etcDirectory + '/' + encodeURIComponent(serverUrl), function(err, results) {
+  var key = url.parse(serverUrl);
+  this._client.del(this._etcDirectory + '/' + key.host, function(err, results) {
     if (err) {
       if (cb) {
         cb(err);

@@ -1,4 +1,3 @@
-var crypto = require('crypto');
 var http = require('http');
 var path = require('path');
 var url = require('url');
@@ -70,7 +69,6 @@ Proxy.prototype._loadServers = function(cb) {
   var self = this;
   this._serviceRegistryClient.find('cloud-target', function(err, results) {
     // TODO: Add some resiliency here.
-    console.log(arguments);
     if (err) {
       if (cb) {
         cb(err);
@@ -136,9 +134,6 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
       return;
     }
 
-    
-
-    console.log(serverUrl);
     if (!serverUrl) {
       socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
       return;
@@ -219,6 +214,24 @@ Proxy.prototype.listen = function() {
 };
 
 Proxy.prototype._proxyEventSubscription = function(request, socket) {
+  var parsed = url.parse(request.url, true);
+  var targetName;
+
+  var match = /^\/servers\/(.+)$/.exec(request.url);
+  if (match) {
+    targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
+  } else {
+    var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
+    socket.end(responseLine);
+    return;
+  }
+
+  if (!this._router[targetName]) {
+    var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
+    socket.end(responseLine);
+    return;
+  }
+
   if (!this._subscriptions.hasOwnProperty(request.url)) {
     this._subscriptions[request.url] = [];
   }
@@ -236,17 +249,6 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
 
     this._subscriptions[request.url].push(socket);
-
-    return;
-  }
-
-  var parsed = url.parse(request.url, true);
-  var targetName;
-
-  var match = /^\/servers\/(.+)$/.exec(request.url);
-  if (match) {
-    targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
-  } else {
     return;
   }
 
@@ -278,7 +280,14 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     self._subscriptions[request.url].push(socket);
 
     socket.on('close', function() {
-      delete self._cache[request.url];
+      var idx = self._subscriptions[request.url].indexOf(socket);
+      if (idx >= 0) {
+        self._subscriptions[request.url].splice(idx, 1);
+      }
+      if(self._subscriptions[request.url].length === 0) {
+        upgradeSocket.end();
+        delete self._subscriptions[request.url];
+      }
     });
 
     upgradeSocket.on('data', function(data) {
@@ -288,7 +297,12 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     });
 
     upgradeSocket.on('close', function(data) {
-      delete self._subscriptions[request.url];
+      delete self._cache[request.url];
+      if (self._subscriptions[request.url]) {
+        self._subscriptions[request.url].forEach(function(socket) {
+          socket.end();
+        });
+      }
     });
   });
 

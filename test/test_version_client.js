@@ -10,7 +10,7 @@ describe('Version client', function() {
     done();  
   });  
   
-  it('can retrieve a set version.', function(done) {
+  it('#get', function(done) {
     var version =  { value: '{"version":"1"}'};
     client._client.keyValuePairs[client._etcdDirectory] = version;
     

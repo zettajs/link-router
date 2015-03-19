@@ -26,6 +26,16 @@ MockEtcd.prototype.set = function(key, value, opts, cb) {
     cb = opts;
   }
 
+  var pathArray = key.split('/');
+  pathArray.pop();
+  var collectionKey = pathArray.join('/');
+  
+  if(this.keyValuePairs[collectionKey]) {
+    this.keyValuePairs[collectionKey].push({ value: value });
+  } else {
+    this.keyValuePairs[collectionKey] = [{value: value}];
+  }
+
   this.keyValuePairs[key] = { value: value };
 
   if(cb) {
@@ -33,6 +43,18 @@ MockEtcd.prototype.set = function(key, value, opts, cb) {
   }
 };
 MockEtcd.prototype.del = function(key, cb) {
+  var obj = this.keyValuePairs[key];
+  
+  var pathArray = key.split('/');
+  pathArray.pop();
+  var collectionKey = pathArray.join('/');
+  
+  var filteredCollection = this.keyValuePairs[collectionKey].filter(function(item) {
+    return item.value !== obj.value;  
+  });
+
+  this.keyValuePairs[collectionKey] = filteredCollection;
+
   delete this.keyValuePairs[key];
 
   if(cb) {
