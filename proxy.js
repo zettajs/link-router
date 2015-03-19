@@ -204,7 +204,7 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
           socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
           upgradeSocket.pipe(socket).pipe(upgradeSocket);
 
-          upgradeSocket.on('end', function() {
+          upgradeSocket.on('close', function() {
             clearInterval(timer);
             self._routerClient.remove(targetName, function(err) {
             });
