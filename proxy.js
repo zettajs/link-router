@@ -156,7 +156,6 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
     
     self._next(function(err, serverUrl) {
       if(err) {
-        console.log('NEXT ERROR');
         console.log(err);
         socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
         return;
