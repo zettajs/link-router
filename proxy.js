@@ -13,7 +13,7 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._router = {};
   this._cache = {};
   this._subscriptions = {};
-  this._servers = null;
+  this._servers = [];
   this._hasLoadedServers = false;
 
   this._versionClient.on('change', function(versionObject) {
@@ -54,6 +54,14 @@ Proxy.prototype._setup = function() {
   });
 
   var self = this;
+
+  self._routerClient.on('change', function(results) {
+    self._router = {};
+    results.forEach(function(obj) {
+      self._router[obj.name] = obj.url;
+    });
+  });
+
   self._serviceRegistryClient.on('change', function(results) {
     self._servers = results;
     if (self._servers.length) {
@@ -127,85 +135,93 @@ Proxy.prototype._shuffleServers = function() {
 
 Proxy.prototype._proxyPeerConnection = function(request, socket) {
   var self = this;
-  this._next(function(err, serverUrl) {
-    if(err) {
-      console.log(err);
-      socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
+  var parsed = url.parse(request.url, true);
+  var targetName;
+
+  var match = /^\/peers\/(.+)$/.exec(request.url);
+  if (match) {
+    targetName = decodeURIComponent(/^\/peers\/(.+)$/.exec(parsed.pathname)[1]);
+  }
+
+  this._routerClient.get(targetName, function(err, peer) {
+    if (err && err.error.errorCode !== 100) {
+      socket.end('HTTP/1.1 500 Server Error\r\n\r\n\r\n');
       return;
     }
-
-    if (!serverUrl) {
-      socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
+    
+    if (peer) {
+      socket.end('HTTP/1.1 409 Peer Conflict\r\n\r\n\r\n');
       return;
     }
-
-    var server = url.parse(serverUrl);
-    var parsed = url.parse(request.url, true);
-    var targetName;
-
-    var match = /^\/peers\/(.+)$/.exec(request.url);
-    if (match) {
-      targetName = decodeURIComponent(/^\/peers\/(.+)$/.exec(parsed.pathname)[1]);
-    }
-
-    var options = {
-      method: request.method,
-      headers: request.headers,
-      hostname: server.hostname,
-      port: server.port,
-      path: parsed.path
-    };
-
-    var target = http.request(options);
-
-    target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
-      var timer = null;
-      var code = targetResponse.statusCode;
-
-      var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
-
-      var headers = Object.keys(targetResponse.headers).map(function(header) {
-        return header + ': ' + targetResponse.headers[header];
-      });
-
-      if (code === 101) {
-        self._router[targetName] = serverUrl;
-        self._routerClient.add(targetName, serverUrl, function(err) {
-          next();
-
-          timer = setInterval(function() {
-            self._routerClient.add(targetName, serverUrl, function(err) {});
-          }, 60000);
-        });
-      } else {
-        if (self._router.hasOwnProperty(targetName)) {
-          delete self._router[targetName];
-        }
-
-        self._routerClient.remove(targetName, function(err) {
-          next();
-        });
+    
+    self._next(function(err, serverUrl) {
+      if(err) {
+        console.log(err);
+        socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
+        return;
       }
 
-      function next() {
-        socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
-        upgradeSocket.pipe(socket).pipe(upgradeSocket);
+      if (!serverUrl) {
+        socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
+        return;
+      }
 
-        upgradeSocket.on('end', function() {
-          clearInterval(timer);
-          self._routerClient.remove(targetName, function(err) {
-          });
+      var server = url.parse(serverUrl);
+
+      var options = {
+        method: request.method,
+        headers: request.headers,
+        hostname: server.hostname,
+        port: server.port,
+        path: parsed.path
+      };
+
+      var target = http.request(options);
+
+      target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
+        var timer = null;
+        var code = targetResponse.statusCode;
+
+        var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
+
+        var headers = Object.keys(targetResponse.headers).map(function(header) {
+          return header + ': ' + targetResponse.headers[header];
         });
 
-      };
+        if (code === 101) {
+          self._routerClient.add(targetName, serverUrl, function(err) {
+            next();
+
+            timer = setInterval(function() {
+              self._routerClient.add(targetName, serverUrl, function(err) {});
+            }, 60000);
+          });
+        } else {
+          next();
+        }
+
+        function next() {
+          socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
+          upgradeSocket.pipe(socket).pipe(upgradeSocket);
+
+          upgradeSocket.on('close', function() {
+            clearInterval(timer);
+            self._routerClient.remove(targetName, function(err) {
+            });
+          });
+
+        };
+      });
+
+      target.on('error', function() {
+        var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
+        socket.end(responseLine);
+      });
+
+      request.pipe(target);
     });
 
-    target.on('error', function() {
-      var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
-      socket.end(responseLine);
-    });
 
-    request.pipe(target);
   });
 };
 

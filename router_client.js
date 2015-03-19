@@ -4,6 +4,7 @@ var util = require('util');
 
 var RouterClient = module.exports = function(options) {
   EventEmitter.call(this);
+  var self = this;
   this._etcDirectory = '/router/zetta';
 
   if(!options.client) {
@@ -44,7 +45,7 @@ RouterClient.prototype.findAll = function(cb) {
         };
       }));
     } else {
-      cb();
+      cb(null, []);
     }
   });
 };
