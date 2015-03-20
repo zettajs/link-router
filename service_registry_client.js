@@ -69,7 +69,6 @@ ServiceRegistry.prototype.find = function(type, cb) {
 };
 
 ServiceRegistry.prototype.add = function(type, serverUrl, version, cb) {
-  var command = 'insert into servers (type, url, created) values(?,?,?)';
   var data = { type: type, url: serverUrl, created: new Date(), version: version };
 
   var key = url.parse(serverUrl);
@@ -85,6 +84,41 @@ ServiceRegistry.prototype.add = function(type, serverUrl, version, cb) {
       cb();
     }
   });
+};
+
+ServiceRegistry.prototype.allocate = function(type, oldRecord, newRecord, cb) {
+  console.log('allocating:', oldRecord);
+  var oldRecord = {
+    type: type,
+    tenantId: oldRecord.tenantId,
+    url: oldRecord.url,
+    created: oldRecord.created,
+    version: oldRecord.version
+  };
+
+  var newRecord = {
+    type: type,
+    tenantId: newRecord.tenantId,
+    url: newRecord.url,
+    created: newRecord.created,
+    version: newRecord.version
+  };
+
+  var key = url.parse(oldRecord.url);
+  this._client.compareAndSwap(this._etcDirectory + '/' + key.host, JSON.stringify(newRecord),
+        JSON.stringify(oldRecord), function(err, results) {
+          if (err) {
+            if (cb) {
+              cb(err);
+            }
+            return;
+          }
+
+          if (cb) {
+            cb();
+          }
+        });
+
 };
 
 ServiceRegistry.prototype.remove = function(type, serverUrl, cb) {

@@ -9,13 +9,14 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._routerClient = routerClient;
   this._versionClient = versionClient;
   this._currentVersion = null;
-  this._index = 0;
+  this._serverIndexes = {};
   this._server = http.createServer();
   this._router = {};
   this._cache = {};
   this._subscriptions = {};
-  this._servers = [];
+  this._servers = {};
   this._hasLoadedServers = false;
+  this._unallocated = [];
 
   this._versionClient.on('change', function(versionObject) {
     self._currentVersion = versionObject.version;
@@ -57,21 +58,46 @@ Proxy.prototype._setup = function() {
   var self = this;
 
   self._routerClient.on('change', function(results) {
-    self._router = {};
+    var tempRouter = {};
     results.forEach(function(obj) {
-      self._router[obj.name] = obj.url;
+      if (!tempRouter.hasOwnProperty(obj.tenantId)) {
+        tempRouter[obj.tenantId] = {};
+      }
+
+      tempRouter[obj.tenantId][obj.name] = obj.url;
     });
+
+    self._router = tempRouter;
   });
 
   self._serviceRegistryClient.on('change', function(results) {
-    self._servers = results;
-    if (self._servers.length) {
-      self._shuffleServers();
-    }
+    self._processServerList(results);
+    //self._shuffleServers();
   });
 
   this._loadServers(function() {
   });
+};
+
+Proxy.prototype._processServerList = function(servers) {
+  var tempServers = {}; 
+  var unallocated = [];
+  servers.forEach(function(server) {
+    if (!server.tenantId) {
+      unallocated.push(server);
+      return;
+    }
+
+    if (!tempServers.hasOwnProperty(server.tenantId)) {
+      tempServers[server.tenantId] = [];
+    }
+    tempServers[server.tenantId].push(server);
+  });
+
+  this._servers = tempServers;
+  this._unallocated = unallocated;
+  console.log('allocated servers:', this._servers);
+  console.log('unallocated servers:', this._unallocated);
 };
 
 Proxy.prototype._loadServers = function(cb) {
@@ -92,10 +118,8 @@ Proxy.prototype._loadServers = function(cb) {
       return;
     }
 
-    self._servers = results;
-    if (self._servers.length) {
-      self._shuffleServers();
-    }
+    self._processServerList(results);
+    //self._shuffleServers();
 
     if (cb) {
       cb();
@@ -103,13 +127,59 @@ Proxy.prototype._loadServers = function(cb) {
   });
 };
 
-Proxy.prototype._next = function(cb) {
+Proxy.prototype._next = function(tenantId, cb) {
   var self = this;
-  var servers = self._servers.filter(function(server) {
-    return server.version === self._currentVersion;  
+  console.log('tenantId:', tenantId);
+  if (!self._servers[tenantId]) {
+    var unallocated = self._unallocated.pop();
+    console.log('unallocated');
+    if (unallocated) {
+      var newRecord = {
+        url: unallocated.url,
+        tenantId: tenantId,
+        created: unallocated.created,
+        version: unallocated.version
+      };
+
+      self._serviceRegistryClient.allocate('cloud-target', unallocated, newRecord, function(err) {
+        if (err) {
+          console.log('error:', err);
+          self._next(tenantId, cb);
+          return;
+        }
+
+        if (!self._servers.hasOwnProperty(tenantId)) {
+          self._servers[tenantId] = [];
+        }
+
+        self._servers[tenantId].push(newRecord);
+        self._next(tenantId, cb);
+        return;
+      })
+    } else {
+      console.log('no more unallocated instances');
+      // handle no more unallocated instances.
+    }
+
+    return;
+  }
+
+  console.log('all servers found:', self._servers[tenantId]);
+  var servers = self._servers[tenantId].filter(function(server) {
+    console.log('current version:', self._currentVersion);
+    console.log('server version:', server.version);
+
+    return true;
+    //return server.version === self._currentVersion;
   });
 
-  var server = servers[self._index++ % servers.length]
+  if (!self._serverIndexes.hasOwnProperty(tenantId)) {
+    self._serverIndexes[tenantId] = 0;
+  }
+
+  console.log('valid servers:', servers);
+  var server = servers[self._serverIndexes[tenantId]++ % servers.length];
+    console.log('found server:', server);
   if(server) {
     cb(null, server.url);
   } else { 
@@ -118,8 +188,8 @@ Proxy.prototype._next = function(cb) {
  
 }
 
-Proxy.prototype._shuffleServers = function() {
-  var counter = this._servers.length;
+/*Proxy.prototype._shuffleServers = function(tenantId) {
+  var counter = this._servers[tenantId].length;
   var temp;
   var index;
 
@@ -128,23 +198,24 @@ Proxy.prototype._shuffleServers = function() {
 
     counter--;
 
-    temp = this._servers[counter];
-    this._servers[counter] = this._servers[index];
-    this._servers[index] = temp;
+    temp = this._servers[tenantId][counter];
+    this._servers[tenantId][counter] = this._servers[tenantId][index];
+    this._servers[tenantId][index] = temp;
   }
-};
+};*/
 
 Proxy.prototype._proxyPeerConnection = function(request, socket) {
   var self = this;
   var parsed = url.parse(request.url, true);
   var targetName;
+  var tenantId = this._getTenantId(request);
 
   var match = /^\/peers\/(.+)$/.exec(request.url);
   if (match) {
     targetName = decodeURIComponent(/^\/peers\/(.+)$/.exec(parsed.pathname)[1]);
   }
 
-  this._routerClient.get(targetName, function(err, peer) {
+  this._routerClient.get(tenantId, targetName, function(err, peer) {
     if (err && err.error.errorCode !== 100) {
       socket.end('HTTP/1.1 500 Server Error\r\n\r\n\r\n');
       return;
@@ -155,7 +226,7 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
       return;
     }
     
-    self._next(function(err, serverUrl) {
+    self._next(tenantId, function(err, serverUrl) {
       if(err) {
         console.log(err);
         socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
@@ -190,11 +261,11 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
         });
 
         if (code === 101) {
-          self._routerClient.add(targetName, serverUrl, function(err) {
+          self._routerClient.add(tenantId, targetName, serverUrl, function(err) {
             next();
 
             timer = setInterval(function() {
-              self._routerClient.add(targetName, serverUrl, function(err) {});
+              self._routerClient.add(tenantId, targetName, serverUrl, function(err) {});
             }, 60000);
           });
         } else {
@@ -207,7 +278,7 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
 
           upgradeSocket.on('close', function() {
             clearInterval(timer);
-            self._routerClient.remove(targetName, function(err) {
+            self._routerClient.remove(tenantId, targetName, function(err) {
             });
           });
 
@@ -233,6 +304,7 @@ Proxy.prototype.listen = function() {
 Proxy.prototype._proxyEventSubscription = function(request, socket) {
   var parsed = url.parse(request.url, true);
   var targetName;
+  var tenantId = this._getTenantId(request);
 
   var match = /^\/servers\/(.+)$/.exec(request.url);
   if (match) {
@@ -243,7 +315,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     return;
   }
 
-  if (!this._router[targetName]) {
+  if (!this._router[tenantId] || !this._router[tenantId][targetName]) {
     var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
     socket.end(responseLine);
     return;
@@ -269,7 +341,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     return;
   }
 
-  var server = url.parse(this._router[targetName]);
+  var server = url.parse(this._router[tenantId][targetName]);
 
   var options = {
     method: request.method,
@@ -334,6 +406,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
 Proxy.prototype._proxyRequest = function(request, response) {
   var parsed = url.parse(request.url, true);
   var targetName;
+  var tenantId = this._getTenantId(request);
 
   var match = /^\/servers\/(.+)$/.exec(request.url);
   if (match) {
@@ -342,11 +415,15 @@ Proxy.prototype._proxyRequest = function(request, response) {
     return;
   }
 
-  if (!this._router.hasOwnProperty(targetName)) {
+  if (!this._router.hasOwnProperty(tenantId) || !this._router[tenantId].hasOwnProperty(targetName)) {
     var self = this;
-    this._routerClient.get(targetName, function(err, serverUrl) {
+    this._routerClient.get(tenantId, targetName, function(err, serverUrl) {
       if (serverUrl) {
-        self._router[targetName] = serverUrl;
+        if (!self._router.hasOwnProperty(tenantId)) {
+          self._router[tenantId] = {};
+        }
+
+        self._router[tenantId][targetName] = serverUrl;
         next(serverUrl);
       } else {
         response.statusCode = 404;
@@ -354,7 +431,7 @@ Proxy.prototype._proxyRequest = function(request, response) {
       }
     });
   } else {
-    next(this._router[targetName]);
+    next(this._router[tenantId][targetName]);
   }
 
   function next(serverUrl) {
@@ -392,6 +469,8 @@ Proxy.prototype._proxyRequest = function(request, response) {
 Proxy.prototype._serveRoot = function(request, response) {
   var self = this;
 
+  var tenantId = this._getTenantId(request);
+
   var body = {
     class: ['root'],
     links: [
@@ -402,7 +481,7 @@ Proxy.prototype._serveRoot = function(request, response) {
     ]
   };
 
-  var entities = this._routerClient.findAll(function(err, results) {
+  var entities = this._routerClient.findAll(tenantId, function(err, results) {
     if (results) {
       results.forEach(function(peer) {
         body.links.push({
@@ -451,4 +530,8 @@ Proxy.prototype._joinUri = function(request, pathname) {
   parsed.pathname = path.join(parsed.pathname, pathname).replace(/\\/g, '/');
 
   return url.format(parsed);
+};
+
+Proxy.prototype._getTenantId = function(request) {
+  return request.headers['x-apigee-iot-tenant-id'] || 'default';
 };
