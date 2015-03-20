@@ -1,3 +1,4 @@
+var crypto = require('crypto');
 var http = require('http');
 var path = require('path');
 var url = require('url');
