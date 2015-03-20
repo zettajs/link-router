@@ -28,30 +28,60 @@ var RouterClient = module.exports = function(options) {
 };
 util.inherits(RouterClient, EventEmitter);
 
-RouterClient.prototype.findAll = function(cb) {
-  this._client.get(this._etcDirectory, function(err, results) {
+RouterClient.prototype.findAll = function(tenantId, cb) {
+  if (typeof tenantId === 'function') {
+    cb = tenantId;
+    tenantId = null;
+  }
+
+  var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
+  console.log('findAll router dir:', dir);
+  this._client.get(dir, { recursive: true }, function(err, results) {
     if (err) {
       cb(err);
       return;
     }
 
-    if (results.node.nodes && results.node.nodes.length > 0) {
-      cb(null, results.node.nodes.map(function(item) {
-        item = JSON.parse(item.value);
-        return {
-          name: item.name,
-          url: item.url,
-          created: item.created
-        };
-      }));
+    if (results.node && results.node.nodes && results.node.nodes.length > 0) {
+      var nodes = results.node.nodes
+        .filter(function(item) {
+          return !item.dir;
+        })
+        .map(function(item) {
+          item = JSON.parse(item.value);
+          return {
+            tenantId: item.tenantId,
+            name: item.name,
+            url: item.url,
+            created: item.created
+          };
+        });
+
+      results.node.nodes
+          .filter(function(item) { return item.dir })
+          .forEach(function(item) {
+            if (item.nodes) {
+              item.nodes.forEach(function(item) {
+                item = JSON.parse(item.value);
+                nodes.push({
+                  tenantId: item.tenantId,
+                  name: item.name,
+                  url: item.url,
+                  created: item.created
+                });
+              });
+            }
+          });
+      cb(null, nodes);
     } else {
       cb(null, []);
     }
   });
 };
 
-RouterClient.prototype.get = function(targetName, cb) {
-  this._client.get(this._etcDirectory + '/' + targetName, function(err, results) {
+RouterClient.prototype.get = function(tenantId, targetName, cb) {
+  var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
+  this._client.get(dir + '/' + targetName, function(err, results) {
     if (err) {
       cb(err);
       return;
@@ -66,9 +96,10 @@ RouterClient.prototype.get = function(targetName, cb) {
   });
 };
 
-RouterClient.prototype.add = function(targetName, serverUrl, cb) {
-  var params = { name: targetName, url: serverUrl, created: new Date() };
-  this._client.set(this._etcDirectory + '/' + targetName, JSON.stringify(params), { ttl: this._ttl }, function(err, results) {
+RouterClient.prototype.add = function(tenantId, targetName, serverUrl, cb) {
+  var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
+  var params = { name: targetName, tenantId: tenantId, url: serverUrl, created: new Date() };
+  this._client.set(dir + '/' + targetName, JSON.stringify(params), { ttl: this._ttl }, function(err, results) {
     if (err) {
       cb(err);
       return;
@@ -78,8 +109,9 @@ RouterClient.prototype.add = function(targetName, serverUrl, cb) {
   });
 };
 
-RouterClient.prototype.remove = function(targetName, cb) {
-  this._client.del(this._etcDirectory + '/' + targetName, function(err, results) {
+RouterClient.prototype.remove = function(tenantId, targetName, cb) {
+  var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
+  this._client.del(dir + '/' + targetName, function(err, results) {
     if (err) {
       cb(err);
       return;
