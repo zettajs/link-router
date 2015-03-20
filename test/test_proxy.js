@@ -24,9 +24,10 @@ function getBody(fn) {
 
 describe('Proxy', function() {
   var proxy = null;
+  var etcd = null;
 
   beforeEach(function(done) {
-    var etcd = new MockEtcd();
+    etcd = new MockEtcd();
     etcd.keyValuePairs['/zetta/version'] = { value: '{"version":"1"}' };
     etcd.keyValuePairs['/services/zetta'] = [];
     etcd.keyValuePairs['/router/zetta'] = [];
@@ -78,5 +79,29 @@ describe('Proxy', function() {
         }))
         .end(done);  
     });
+
+    
   });  
+  describe('Proxy updates from etcd', function() {
+    it('will update the version from an etcd watcher', function() {
+      etcd.keyValuePairs['/zetta/version'] = { value: '{"version":"1"}' };
+      etcd.keyValuePairs['/zetta/version'] = { value: '{"version":"2"}' };
+      etcd._trigger('/zetta/version', '{"version":"2"}');
+      assert.equal(proxy._currentVersion, "2");
+    });
+
+    it('will update the current routes from an etcd watcher', function() {
+      etcd.keyValuePairs['/router/zetta'] = [{value: '{"url":"http://example.com/"}'}];
+      etcd._trigger('/router/zetta', []);
+      var routerKeys = Object.keys(proxy._router);
+      assert.equal(routerKeys.length, 1);      
+    });
+
+    it('will update the current targets from an etcd watcher', function() {
+      etcd.keyValuePairs['/services/zetta'] = [{value: '{"url":"http://example.com/"}'}];
+      etcd._trigger('/services/zetta', []);
+      assert.equal(proxy._servers.length, 1);
+    });
+  });
+    
 });
