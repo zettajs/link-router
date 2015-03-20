@@ -45,8 +45,9 @@ Proxy.prototype._setup = function() {
   });
 
   this._server.on('request', function(request, response) {
+    console.log('request event');
     var parsed = url.parse(request.url, true);
-
+    
     if (parsed.path === '/') {
       self._serveRoot(request, response)
     } else {
