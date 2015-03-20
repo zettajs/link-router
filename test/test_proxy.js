@@ -51,6 +51,19 @@ describe('Proxy', function() {
         .expect('Access-Control-Allow-Origin', '*', done);
     });
 
+    it('will have servers within the router in the API response', function(done) {
+      etcd.keyValuePairs['/router/zetta'] = [{value: '{"url":"http://example.com/", "name": "foo"}'}];
+      etcd._trigger('/router/zetta', []);
+      request(proxy._server)
+        .get('/')
+        .expect(getBody(function(res, body) {
+          assert.equal(body.links.length, 2);
+          var peerLink = body.links[1];
+          assert.equal(peerLink.title, "foo");
+        }))
+        .end(done);
+    });
+
     it('will have a list of links.', function(done) {
        request(proxy._server)
         .get('/')
