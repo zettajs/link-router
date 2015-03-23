@@ -30,7 +30,6 @@ Proxy.prototype._setup = function() {
 
   this._versionClient.get(function(err, versionObject) {
     if(err) {
-      console.log(err);  
       return;
     }  
 
@@ -96,8 +95,6 @@ Proxy.prototype._processServerList = function(servers) {
 
   this._servers = tempServers;
   this._unallocated = unallocated;
-  console.log('allocated servers:', this._servers);
-  console.log('unallocated servers:', this._unallocated);
 };
 
 Proxy.prototype._loadServers = function(cb) {
@@ -129,10 +126,8 @@ Proxy.prototype._loadServers = function(cb) {
 
 Proxy.prototype._next = function(tenantId, cb) {
   var self = this;
-  console.log('tenantId:', tenantId);
   if (!self._servers[tenantId]) {
     var unallocated = self._unallocated.pop();
-    console.log('unallocated');
     if (unallocated) {
       var newRecord = {
         url: unallocated.url,
@@ -143,7 +138,6 @@ Proxy.prototype._next = function(tenantId, cb) {
 
       self._serviceRegistryClient.allocate('cloud-target', unallocated, newRecord, function(err) {
         if (err) {
-          console.log('error:', err);
           self._next(tenantId, cb);
           return;
         }
@@ -157,29 +151,21 @@ Proxy.prototype._next = function(tenantId, cb) {
         return;
       })
     } else {
-      console.log('no more unallocated instances');
       // handle no more unallocated instances.
     }
 
     return;
   }
 
-  console.log('all servers found:', self._servers[tenantId]);
   var servers = self._servers[tenantId].filter(function(server) {
-    console.log('current version:', self._currentVersion);
-    console.log('server version:', server.version);
-
-    return true;
-    //return server.version === self._currentVersion;
+    return server.version === self._currentVersion; // might be a problem here in Vagrant build
   });
 
   if (!self._serverIndexes.hasOwnProperty(tenantId)) {
     self._serverIndexes[tenantId] = 0;
   }
 
-  console.log('valid servers:', servers);
   var server = servers[self._serverIndexes[tenantId]++ % servers.length];
-    console.log('found server:', server);
   if(server) {
     cb(null, server.url);
   } else { 

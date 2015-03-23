@@ -6,7 +6,12 @@ var MockEtcd = module.exports = function() {
   this.watchers = {}; 
 }
 
-MockEtcd.prototype.get = function(key, cb) {
+MockEtcd.prototype.get = function(key, options, cb) {
+  if (typeof options === 'function') {
+    cb = options;
+    options = null;
+  }
+
   var object = this.keyValuePairs[key];
   if(object) {
     var result = null;
@@ -75,6 +80,16 @@ MockEtcd.prototype.watcher = function(key) {
   return watcher;
 };
 
+MockEtcd.prototype.compareAndSwap = function(key, newRecord, oldRecord, cb) {
+  var self = this;
+  this.get(key, function(err, results) {
+    var item = results.node.value;
+    if (item === oldRecord) {
+      self.set(key, newRecord, cb);
+    }
+  });
+};
+
 //Trigger a watcher event for a key.
 MockEtcd.prototype._trigger = function(key, value) {
   var watcherValues = this.watchers[key];
@@ -92,6 +107,3 @@ var MockWatcher = function() {
   EventEmitter.call(this);  
 };
 util.inherits(MockWatcher, EventEmitter);
-
-
-
