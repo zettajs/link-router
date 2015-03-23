@@ -87,7 +87,6 @@ ServiceRegistry.prototype.add = function(type, serverUrl, version, cb) {
 };
 
 ServiceRegistry.prototype.allocate = function(type, oldRecord, newRecord, cb) {
-  console.log('allocating:', oldRecord);
   var oldRecord = {
     type: type,
     tenantId: oldRecord.tenantId,

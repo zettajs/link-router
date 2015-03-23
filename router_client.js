@@ -35,7 +35,6 @@ RouterClient.prototype.findAll = function(tenantId, cb) {
   }
 
   var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
-  console.log('findAll router dir:', dir);
   this._client.get(dir, { recursive: true }, function(err, results) {
     if (err) {
       cb(err);
@@ -80,6 +79,12 @@ RouterClient.prototype.findAll = function(tenantId, cb) {
 };
 
 RouterClient.prototype.get = function(tenantId, targetName, cb) {
+  if (typeof targetName === 'function') {
+    cb = targetName;
+    targetName = tenantId;
+    tenantId = null;
+  }
+
   var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
   this._client.get(dir + '/' + targetName, function(err, results) {
     if (err) {
@@ -97,6 +102,13 @@ RouterClient.prototype.get = function(tenantId, targetName, cb) {
 };
 
 RouterClient.prototype.add = function(tenantId, targetName, serverUrl, cb) {
+  if (typeof serverUrl === 'function') {
+    cb = serverUrl;
+    serverUrl = targetName;
+    targetName = tenantId;
+    tenantId = null;
+  }
+
   var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
   var params = { name: targetName, tenantId: tenantId, url: serverUrl, created: new Date() };
   this._client.set(dir + '/' + targetName, JSON.stringify(params), { ttl: this._ttl }, function(err, results) {
@@ -110,6 +122,12 @@ RouterClient.prototype.add = function(tenantId, targetName, serverUrl, cb) {
 };
 
 RouterClient.prototype.remove = function(tenantId, targetName, cb) {
+  if (typeof targetName === 'function') {
+    cb = targetName;
+    targetName = tenantId;
+    tenantId = null;
+  }
+
   var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
   this._client.del(dir + '/' + targetName, function(err, results) {
     if (err) {
