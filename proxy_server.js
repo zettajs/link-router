@@ -19,3 +19,24 @@ var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient);
 proxy.listen(port, function() {
   console.log('proxy listening on http://localhost:' + port);
 });
+
+['SIGINT', 'SIGTERM'].forEach(function(signal) {
+  process.on(signal, function() {
+    
+    var count = proxy._peerSockets.length;
+    proxy._peerSockets.forEach(function(peer) {
+      routerClient.remove(peer.tenantId, peer.targetName, function() {
+        count--;
+        if (count === 0) {
+          process.exit();
+        }
+      })
+    });
+    
+    if (count === 0) {
+      process.exit();
+    }
+
+  });
+});
+
