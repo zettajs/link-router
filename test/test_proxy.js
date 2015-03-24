@@ -52,8 +52,8 @@ describe('Proxy', function() {
     });
 
     it('will have servers within the router in the API response', function(done) {
-      etcd.keyValuePairs['/router/zetta'] = [{value: '{"url":"http://example.com/", "name": "foo"}'}];
-      etcd._trigger('/router/zetta', []);
+      etcd.keyValuePairs['/router/zetta/default'] = [{value: '{"url":"http://example.com/", "name": "foo", "tenantId": "default"}'}];
+      etcd._trigger('/router/zetta/default', []);
       request(proxy._server)
         .get('/')
         .expect(getBody(function(res, body) {
@@ -104,14 +104,16 @@ describe('Proxy', function() {
     });
 
     it('will update the current routes from an etcd watcher', function() {
-      etcd.keyValuePairs['/router/zetta'] = [{value: '{"url":"http://example.com/"}'}];
+      etcd.keyValuePairs['/router/zetta/default'] = [{value: '{"url":"http://example.com/", "tenantId": "default"}'}];
+      etcd.keyValuePairs['/router/zetta/'] = [{value: '{"url":"http://example.com/", "tenantId": "default"}'}];
       etcd._trigger('/router/zetta', []);
+      console.log(proxy._router);
       var routerKeys = Object.keys(proxy._router);
       assert.equal(routerKeys.length, 1);      
     });
 
     it('will update the current targets from an etcd watcher', function() {
-      etcd.keyValuePairs['/services/zetta'] = [{value: '{"url":"http://example.com/"}'}];
+      etcd.keyValuePairs['/services/zetta'] = [{value: '{"url":"http://example.com/", "tenantId": "default"}'}];
       etcd._trigger('/services/zetta', []);
       assert.equal(proxy._servers.length, 1);
     });

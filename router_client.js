@@ -18,7 +18,7 @@ var RouterClient = module.exports = function(options) {
   this._watcher.on('change', function() {
     self.findAll(function(err, results) {
       if(err) {
-        console.log(err);
+        console.error(err);
         return;
       }
       
