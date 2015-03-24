@@ -57,7 +57,6 @@ Proxy.prototype._setup = function() {
   var self = this;
 
   self._routerClient.on('change', function(results) {
-    console.log('changing:', results);
     var tempRouter = {};
     results.forEach(function(obj) {
       if (!tempRouter.hasOwnProperty(obj.tenantId)) {
