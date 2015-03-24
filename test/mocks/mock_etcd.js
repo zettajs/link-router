@@ -51,7 +51,7 @@ MockEtcd.prototype.get = function(key, options, cb) {
   var rootKey = v.key;
   var root = v.obj;
 
-  if (options && options.recursive) {
+  if ((options && options.recursive) || (typeof root === 'object' && Object.keys(root).length > 0)) {
     var results = {};
     var walk = function(currentKey, current, obj) {
       if (typeof obj === 'object') {
@@ -125,9 +125,25 @@ MockEtcd.prototype.set = function(key, value, opts, cb) {
   }
 };
 
-MockEtcd.prototype.del = function(key, cb) {
-  //var obj = this.keyValuePairs[key];
+MockEtcd.prototype.mkdir = function(key, cb) {
+  var paths = key.split('/');
+  paths.shift();
 
+  var root = this.keyValuePairs;
+  paths.forEach(function(path, i) {
+    if (Object.keys(root).indexOf(path) === -1) {
+      root[path] = {};
+    }
+
+    root = root[path];
+  });
+
+  if (cb) {
+    cb();
+  }
+};
+
+MockEtcd.prototype.del = function(key, cb) {
   var paths = key.split('/');
   paths.shift();
 

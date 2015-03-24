@@ -21,7 +21,7 @@ describe('Proxy', function() {
   beforeEach(function(done) {
     etcd = new MockEtcd();
 
-    etcd.keyValuePairs['/zetta/version'] = { value: '{"version":"1"}' };
+    etcd.set('/zetta/version', '{"version":"1"}');
     
     var versionClient = new VersionClient({ client: etcd });
     serviceRegistryClient = new ServiceRegistryClient({ client: etcd });
