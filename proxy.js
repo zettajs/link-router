@@ -152,6 +152,7 @@ Proxy.prototype._next = function(tenantId, cb) {
       })
     } else {
       // handle no more unallocated instances.
+      cb(new Error('No available target servers for tenant `' + tenantId + '`.'));
     }
 
     return;
