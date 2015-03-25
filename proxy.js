@@ -152,17 +152,16 @@ Proxy.prototype._next = function(tenantId, cb) {
       });
       return;
     } else if (self._servers[tenantId] && self._servers[tenantId].length > 0) {
-      // handle cases where there are not any more instances to allocate.
+      // TODO: handle cases where there are not any more instances to allocate.
       // continue to use self._servers[tenantId] for servers
     } else {
-      // handle no more unallocated instances.
       cb(new Error('No available target servers for tenant `' + tenantId + '`.'));
       return;
     }
   }
 
   var servers = self._servers[tenantId].filter(function(server) {
-    return server.version === self._currentVersion; // might be a problem here in Vagrant build
+    return server.version === self._currentVersion;
   });
 
   if (!self._serverIndexes.hasOwnProperty(tenantId)) {

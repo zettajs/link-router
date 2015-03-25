@@ -1,4 +1,5 @@
 var assert = require('assert');
+var request = require('supertest');
 var zetta = require('zetta');
 
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
@@ -29,6 +30,19 @@ describe('Proxy', function() {
 
     target = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });
     hub = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });
+
+    hub.use(function(server) {
+      server.onPeerRequest(function(request) {
+        request.use(function(handle) {
+          handle('request', function(pipeline) {
+            return pipeline.map(function(env) {
+              env.request.headers['X-Apigee-IoT-Tenant-ID'] = 'test';
+              return env;
+            });
+          });
+        });
+      });
+    });
 
     target.silent();
     hub.silent();
@@ -128,5 +142,55 @@ describe('Proxy', function() {
       hub.listen(0);
     });
       
+  });
+
+  it('will return a 503 when no unallocated servers are available', function(done) {
+    proxy._unallocated = [];
+
+    request(proxy._server)
+      .get('/peers/test?connectionId=1234567890')
+      .set('Upgrade', 'websocket')
+      .set('Connection', 'Upgrade')
+      .set('Sec-WebSocket-Version', '13')
+      .set('Sec-WebSocket-Key', new Buffer('13' + '-' + Date.now()).toString('base64'))
+      .set('X-Apigee-IoT-Tenant-Id', 'test')
+      .expect(503)
+      .end(done);
+  });
+
+  it('will allocate 2 targets per tenant', function(done) {
+    var target2 = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });
+    target2.silent();
+    target2.name('target.2');
+
+    target2.listen(0, function(err) {
+      if(err) {
+        return done(err);
+      }
+
+      var cloud = 'http://localhost:' + target2.httpServer.server.address().port;
+      serviceRegistryClient.add('cloud-target', cloud, '1');
+
+      etcd._trigger('/services/zetta', '{"foo":"foo"}');
+
+      hub.pubsub.subscribe('_peer/connect', function(topic, data) {
+        assert.equal(proxy._servers['test'].length, 2);
+        done();
+      });
+
+      hub.link(proxyUrl);
+      hub.listen(0);
+    });
+
+  });
+
+  it('will allocate last remaining target per tenant', function(done) {
+    hub.link(proxyUrl);
+    hub.listen(0);
+
+    hub.pubsub.subscribe('_peer/connect', function(topic, data) {
+      assert.equal(proxy._servers['test'].length, 1);
+      done();
+    });
   });
 });
