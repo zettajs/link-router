@@ -11,8 +11,7 @@ describe('Version client', function() {
   });  
   
   it('#get', function(done) {
-    var version =  { value: '{"version":"1"}'};
-    client._client.keyValuePairs[client._etcdDirectory] = version;
+    client._client.set(client._etcdDirectory, '{"version":"1"}');
     
     client.get(function(err, version) {
       assert.equal(version.version, '1');
@@ -21,8 +20,7 @@ describe('Version client', function() {
   });
 
   it('emits change event', function(done) {
-    var version = { value: '{"version":"1"}'};
-    client._client.keyValuePairs[client._etcdDirectory] = version;
+    client._client.set(client._etcdDirectory, '{"version":"1"}');
     
     client.on('change', function() {
       done();

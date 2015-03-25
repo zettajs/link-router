@@ -16,12 +16,14 @@ describe('Registry client', function() {
     client.add('cloud-target', 'http://example.com', '0', function() {
       var keys = Object.keys(client._client.keyValuePairs);
       var parsedTest = JSON.parse(value);
-      var parsedObject = JSON.parse(client._client.keyValuePairs[key].value);
-      assert.equal(parsedTest.type, parsedObject.type);
-      assert.equal(parsedTest.url, parsedObject.url);
-      assert.equal(parsedTest.date, parsedObject.date);
-      assert.equal(parsedTest.version, parsedObject.version);
-      done(); 
+      client._client.get(key, function(err, result) {
+        var parsedObject = JSON.parse(result.node.value);
+        assert.equal(parsedTest.type, parsedObject.type);
+        assert.equal(parsedTest.url, parsedObject.url);
+        assert.equal(parsedTest.date, parsedObject.date);
+        assert.equal(parsedTest.version, parsedObject.version);
+        done(); 
+      });
     });
   });  
 
@@ -36,8 +38,13 @@ describe('Registry client', function() {
   });
 
   it('#findAll', function(done) {
-    var value = [{ "value": '{"type":"cloud-target","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}, { "value": '{"type":"cloud-target","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}]; 
-    client._client.keyValuePairs[client._etcDirectory] = value;
+    var values = [
+      { key: 'example.com', value: '{"type":"cloud-target","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'},
+    { key: 'example2.com', value: '{"type":"cloud-target","url":"http://example2.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}
+  ]; 
+    values.forEach(function(value) {
+      client._client.set(client._etcDirectory + '/' + value.key, value.value);
+    });
 
     client.findAll(function(err, results) {
       assert.equal(results.length, 2);
@@ -46,8 +53,13 @@ describe('Registry client', function() {
   }); 
 
   it('#find', function(done) {
-     var value = [{ "value": '{"type":"cloud-target-1","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}, { "value": '{"type":"cloud-target","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}]; 
-    client._client.keyValuePairs[client._etcDirectory] = value;
+    var values = [
+      { key: 'example.com', value: '{"type":"cloud-target-1","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'},
+    { key: 'example2.com', value: '{"type":"cloud-target","url":"http://example2.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}
+  ]; 
+    values.forEach(function(value) {
+      client._client.set(client._etcDirectory + '/' + value.key, value.value);
+    });
 
     client.find('cloud-target-1', function(err, results) {
       assert.equal(results.length, 1);
@@ -56,9 +68,13 @@ describe('Registry client', function() {
   });
 
   it('emits a change event', function(done) {
-    var value = [{ "value": '{"type":"cloud-target-1","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}, { "value": '{"type":"cloud-target","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}]; 
-    client._client.keyValuePairs[client._etcDirectory] = value;
-
+    var values = [
+      { key: 'example.com', value: '{"type":"cloud-target-1","url":"http://example.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'},
+    { key: 'example2.com', value: '{"type":"cloud-target","url":"http://example2.com","created":"2015-03-13T20:05:52.177Z","version":"0"}'}
+  ]; 
+    values.forEach(function(value) {
+      client._client.set(client._etcDirectory + '/' + value.key, value.value);
+    });
     client.on('change', function() {
       done();  
     });    
