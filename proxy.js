@@ -126,7 +126,7 @@ Proxy.prototype._loadServers = function(cb) {
 
 Proxy.prototype._next = function(tenantId, cb) {
   var self = this;
-  if (!self._servers[tenantId]) {
+  if (!self._servers[tenantId] || self._servers[tenantId].length < 2) {
     var unallocated = self._unallocated.pop();
     if (unallocated) {
       var newRecord = {
