@@ -149,13 +149,16 @@ Proxy.prototype._next = function(tenantId, cb) {
         self._servers[tenantId].push(newRecord);
         self._next(tenantId, cb);
         return;
-      })
+      });
+      return;
+    } else if (self._servers[tenantId] && self._servers[tenantId].length > 0) {
+      // handle cases where there are not any more instances to allocate.
+      // continue to use self._servers[tenantId] for servers
     } else {
       // handle no more unallocated instances.
       cb(new Error('No available target servers for tenant `' + tenantId + '`.'));
+      return;
     }
-
-    return;
   }
 
   var servers = self._servers[tenantId].filter(function(server) {
