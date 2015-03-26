@@ -18,6 +18,8 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._hasLoadedServers = false;
   this._unallocated = [];
 
+  this._peerSockets = [];
+
   this._versionClient.on('change', function(versionObject) {
     self._currentVersion = versionObject.version;
   });
@@ -243,6 +245,8 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
         var timer = null;
         var code = targetResponse.statusCode;
 
+        var peerObj = { tenantId: tenantId, targetName: targetName, upgradeSocket: upgradeSocket, socket: socket };
+
         var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
 
         var headers = Object.keys(targetResponse.headers).map(function(header) {
@@ -250,6 +254,8 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
         });
 
         if (code === 101) {
+
+          self._peerSockets.push(peerObj);
           self._routerClient.add(tenantId, targetName, serverUrl, function(err) {
             next();
 
@@ -267,6 +273,12 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
 
           upgradeSocket.on('close', function() {
             clearInterval(timer);
+            
+            var idx = self._peerSockets.indexOf(peerObj);
+            if (idx >= 0) {
+              self._peerSockets.splice(idx, 1);
+            }
+
             self._routerClient.remove(tenantId, targetName, function(err) {
             });
           });
