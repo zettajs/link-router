@@ -10,7 +10,8 @@ describe('Router client', function() {
     client = new RouterClient({ client: new MockEtcd });  
     var keyValuePairs = [
       {key: 'foo1', value: '{ "name": "foo1", "url": "http://localhost:3000", "created": "0" ,"tenantId": "' + tenantId + '" }'},
-      {key: 'foo2', value: '{ "name": "foo2", "url": "http://localhost:3001", "created": "1", "tenantId": "' + tenantId + '" }'}
+      {key: 'foo2', value: '{ "name": "foo2", "url": "http://localhost:3001", "created": "1", "tenantId": "' + tenantId + '" }'},
+      {key: 'foo3', value: 'not valid json'}
     ];
 
     keyValuePairs.forEach(function(obj) {
@@ -60,11 +61,8 @@ describe('Router client', function() {
       assert.ok(!err);
       
       var keys = Object.keys(client._client.keyValuePairs['router']['zetta'][tenantId]);
-      
-      assert.equal(keys.length, 1);
-      
-      assert.equal(keys.indexOf(target), -1);  
-
+      assert.equal(keys.length, 2);
+      assert.equal(keys.indexOf(target), -1);
       done();
     }); 
   });

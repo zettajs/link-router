@@ -43,32 +43,43 @@ RouterClient.prototype.findAll = function(tenantId, cb) {
 
     if (results.node && results.node.nodes && results.node.nodes.length > 0) {
       var nodes = results.node.nodes
-        .filter(function(item) {
-          return !item.dir;
-        })
+        .filter(function(item) { return !item.dir; })
         .map(function(item) {
-          item = JSON.parse(item.value);
-          return {
-            tenantId: item.tenantId,
-            name: item.name,
-            url: item.url,
-            created: item.created
-          };
-        });
+          try {
+            item = JSON.parse(item.value);
+            return {
+              tenantId: item.tenantId,
+              name: item.name,
+              url: item.url,
+              created: item.created
+            };
+          } catch(err) {
+            return null;
+          }
+        })
+        .filter(function(item) {
+          return item !== null;
+        });      
 
       results.node.nodes
           .filter(function(item) { return item.dir })
           .forEach(function(item) {
             if (item.nodes) {
-              item.nodes.forEach(function(item) {
-                item = JSON.parse(item.value);
-                nodes.push({
-                  tenantId: item.tenantId,
-                  name: item.name,
-                  url: item.url,
-                  created: item.created
+              item.nodes
+                .filter(function(item) { return !item.dir; })
+                .forEach(function(item) {
+                  try {
+                    item = JSON.parse(item.value);
+                    nodes.push({
+                      tenantId: item.tenantId,
+                      name: item.name,
+                      url: item.url,
+                      created: item.created
+                    });
+                  } catch(err) {
+                    
+                  }
                 });
-              });
             }
           });
       cb(null, nodes);
@@ -93,7 +104,12 @@ RouterClient.prototype.get = function(tenantId, targetName, cb) {
     }
 
     if (results.node) {
-      var route = JSON.parse(results.node.value);
+      var route = null;
+      try {
+        route = JSON.parse(results.node.value);
+      } catch(err) {
+        return cb(err);
+      }
       cb(null, route.url);
     } else {
       cb();
