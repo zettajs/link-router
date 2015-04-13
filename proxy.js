@@ -128,8 +128,35 @@ Proxy.prototype._loadServers = function(cb) {
 
 Proxy.prototype._next = function(tenantId, cb) {
   var self = this;
-  if (!self._servers[tenantId] || self._servers[tenantId].length < 2) {
-    var unallocated = self._unallocated.pop();
+
+  if (!self._servers.hasOwnProperty(tenantId)) {
+    self._servers[tenantId] = [];
+  }
+
+  if (!self._serverIndexes.hasOwnProperty(tenantId)) {
+    self._serverIndexes[tenantId] = 0;
+  }
+
+  // filter servers by version
+  var servers = self._servers[tenantId].filter(function(server) {
+    return server.version === self._currentVersion;
+  });
+
+  // return the next unallocated server filtered by current version
+  function nextUnallocated() {
+    var ret = undefined;
+    self._unallocated.some(function(server, idx, arr) {
+      if (server.version === self._currentVersion) {
+        ret = arr[idx];
+        arr.splice(idx, 1);
+        return true;
+      }
+    });
+    return ret;
+  }
+
+  if (servers.length < 2) {
+    var unallocated = nextUnallocated();
     if (unallocated) {
       var newRecord = {
         url: unallocated.url,
@@ -144,30 +171,18 @@ Proxy.prototype._next = function(tenantId, cb) {
           return;
         }
 
-        if (!self._servers.hasOwnProperty(tenantId)) {
-          self._servers[tenantId] = [];
-        }
-
         self._servers[tenantId].push(newRecord);
         self._next(tenantId, cb);
         return;
       });
       return;
-    } else if (self._servers[tenantId] && self._servers[tenantId].length > 0) {
+    } else if (servers.length > 0) {
       // TODO: handle cases where there are not any more instances to allocate.
       // continue to use self._servers[tenantId] for servers
     } else {
       cb(new Error('No available target servers for tenant `' + tenantId + '`.'));
       return;
     }
-  }
-
-  var servers = self._servers[tenantId].filter(function(server) {
-    return server.version === self._currentVersion;
-  });
-
-  if (!self._serverIndexes.hasOwnProperty(tenantId)) {
-    self._serverIndexes[tenantId] = 0;
   }
 
   var server = servers[self._serverIndexes[tenantId]++ % servers.length];
