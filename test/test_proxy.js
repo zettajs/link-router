@@ -119,5 +119,44 @@ describe('Proxy', function() {
       assert.equal(Object.keys(proxy._servers).length, 1);
     });
   });
+
+  describe('Version update', function() {
+    it('_next should return current version', function(done) {
+      etcd.set('/services/zetta/foo', '{"url":"http://example.com/", "tenantId": "default", "version": "1"}');
+      etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
+      etcd._trigger('/services/zetta', []);
+      proxy._next('default', function(err, serverUrl) {
+        assert.equal('http://example.com/', serverUrl);
+        done();
+      })
+    })
+
+    it('_next should provision new target when version is updated', function(done) {
+      etcd.set('/services/zetta/foo', '{"url":"http://example.com/", "tenantId": "default", "version": "1"}');
+      etcd.set('/services/zetta/foo2', '{"url":"http://example2.com/", "tenantId": "default", "version": "1"}');
+      etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
+      etcd._trigger('/services/zetta', []);
+      proxy._next('default', function(err, serverUrl) {
+        assert.equal('http://example.com/', serverUrl);
+        etcd._trigger('/zetta/version', JSON.stringify({ version: '2'}));
+        proxy._next('default', function(err, serverUrl) {
+          assert.equal('http://hello.com/', serverUrl);
+          done();
+        });
+      })
+    })
+
+    it('_next should return error when no targets match current version', function(done) {
+      etcd.set('/services/zetta/foo', '{"url":"http://example.com/", "tenantId": "default", "version": "2"}');
+      etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
+      etcd._trigger('/services/zetta', []);
+      proxy._next('default', function(err, serverUrl) {
+        assert(err);
+        done();
+      })
+    })
+
+
+  })
     
 });
