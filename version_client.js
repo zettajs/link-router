@@ -13,11 +13,14 @@ var VersionClient = module.exports = function(options) {
     this._client = options.client;
   }
 
-  
-
   this._watcher = this._client.watcher(this._etcdDirectory);
   this._watcher.on('change', function(results) {
-    var versionObject = JSON.parse(results.node.value);
+    var versionObject = null;
+    try {
+      versionObject = JSON.parse(results.node.value);      
+    } catch(err) {
+      return;
+    }
     self.emit('change', versionObject); 
   });
 }
@@ -30,9 +33,13 @@ VersionClient.prototype.get = function(cb) {
       return;
     }
     
-    var versionObject = JSON.parse(results.node.value);
-    
-    cb(null, versionObject);  
+    var versionObject = null;
+    try {
+      versionObject = JSON.parse(results.node.value);
+    } catch(err) {
+      return cb(err);
+    }
+    cb(null, versionObject); 
   }); 
 };
 
