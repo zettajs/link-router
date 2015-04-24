@@ -221,7 +221,6 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
     targetName = decodeURIComponent(/^\/peers\/(.+)$/.exec(parsed.pathname)[1]);
   }
 
-  console.log('Proxy Peer:', tenantId, targetName);
   this._routerClient.get(tenantId, targetName, function(err, peer) {
     if (err && err.error.errorCode !== 100) {
       socket.end('HTTP/1.1 500 Server Error\r\n\r\n\r\n');
