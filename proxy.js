@@ -39,6 +39,7 @@ Proxy.prototype._setup = function() {
   });
 
   this._server.on('upgrade', function(request, socket) {
+    socket.allowHalfOpen = false;
     if (/^\/peers\//.test(request.url)) {
       self._proxyPeerConnection(request, socket);
     } else {
@@ -69,6 +70,7 @@ Proxy.prototype._setup = function() {
     });
 
     self._router = tempRouter;
+    self._disconnectStaleWsClients();
   });
 
   self._serviceRegistryClient.on('change', function(results) {
@@ -269,11 +271,9 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
         });
 
         if (code === 101) {
-
           self._peerSockets.push(peerObj);
           self._routerClient.add(tenantId, targetName, serverUrl, function(err) {
             next();
-
             timer = setInterval(function() {
               self._routerClient.add(tenantId, targetName, serverUrl, function(err) {});
             }, 60000);
@@ -317,7 +317,33 @@ Proxy.prototype.listen = function() {
   this._server.listen.apply(this._server, Array.prototype.slice.call(arguments));
 };
 
+// disconnects client ws where the hub no longer exists or 
+// exists on a different target server
+Proxy.prototype._disconnectStaleWsClients = function() {
+  var self = this;
+
+  function parseSubscription(hash) {
+    var arr = hash.split(':');
+    return {
+      tenantId: decodeURIComponent(arr[0]),
+      targetName: decodeURIComponent(arr[1]),
+      targetHost: decodeURIComponent(arr[2]),
+      url: decodeURIComponent(arr[3])
+    };
+  }
+
+  // make sure target exists in router and is the same as what is subscribed to
+  Object.keys(this._cache).forEach(function(hash) {
+    var obj = parseSubscription(hash);
+    if (!self._router[obj.tenantId] || !self._router[obj.tenantId][obj.targetName] || self._router[obj.tenantId][obj.targetName] !== obj.tagetHost) {
+      // end subscription to zetta target, will close all clients
+      self._cache[hash].end();
+    }
+  });
+};
+
 Proxy.prototype._proxyEventSubscription = function(request, socket) {
+  var self = this;
   var parsed = url.parse(request.url, true);
   var targetName;
   var tenantId = this._getTenantId(request);
@@ -337,11 +363,28 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     return;
   }
 
-  if (!this._subscriptions.hasOwnProperty(request.url)) {
-    this._subscriptions[request.url] = [];
+  var urlHash = [tenantId, targetName, this._router[tenantId][targetName], request.url].map(encodeURIComponent).join(':');
+
+  if (!this._subscriptions.hasOwnProperty(urlHash)) {
+    this._subscriptions[urlHash] = [];
   }
 
-  if (this._cache.hasOwnProperty(request.url)) {
+  socket.on('close', function() {
+    var idx = self._subscriptions[urlHash].indexOf(socket);
+    if (idx >= 0) {
+      self._subscriptions[urlHash].splice(idx, 1);
+    }
+
+    if(self._subscriptions[urlHash].length === 0) {
+      if (self._cache[urlHash]) {
+        self._cache[urlHash].end();
+      }
+      delete self._subscriptions[urlHash];
+      delete self._cache[urlHash];
+    }
+  });
+
+  if (this._cache.hasOwnProperty(urlHash)) {
     var key = request.headers['sec-websocket-key'];
     var shasum = crypto.createHash('sha1');
     shasum.update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11');
@@ -353,12 +396,11 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
 
     socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
 
-    this._subscriptions[request.url].push(socket);
+    this._subscriptions[urlHash].push(socket);
     return;
   }
 
   var server = url.parse(this._router[tenantId][targetName]);
-
   var options = {
     method: request.method,
     headers: request.headers,
@@ -368,8 +410,6 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
   };
 
   var target = http.request(options);
-
-  var self = this;
   target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
     var code = targetResponse.statusCode;
 
@@ -381,30 +421,21 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
 
     socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
 
-    self._cache[request.url] = upgradeSocket;
-    self._subscriptions[request.url].push(socket);
-
-    socket.on('close', function() {
-      var idx = self._subscriptions[request.url].indexOf(socket);
-      if (idx >= 0) {
-        self._subscriptions[request.url].splice(idx, 1);
-      }
-      if(self._subscriptions[request.url].length === 0) {
-        upgradeSocket.end();
-        delete self._subscriptions[request.url];
-      }
-    });
+    self._cache[urlHash] = upgradeSocket;
+    self._subscriptions[urlHash].push(socket);
 
     upgradeSocket.on('data', function(data) {
-      self._subscriptions[request.url].forEach(function(socket) {
-        socket.write(data);
-      });
+      if (self._subscriptions[urlHash]) {
+        self._subscriptions[urlHash].forEach(function(socket) {
+          socket.write(data);
+        });
+      }
     });
 
-    upgradeSocket.on('close', function(data) {
-      delete self._cache[request.url];
-      if (self._subscriptions[request.url]) {
-        self._subscriptions[request.url].forEach(function(socket) {
+    upgradeSocket.on('close', function() {
+      delete self._cache[urlHash];
+      if (self._subscriptions[urlHash]) {
+        self._subscriptions[urlHash].forEach(function(socket) {
           socket.end();
         });
       }
