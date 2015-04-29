@@ -155,8 +155,40 @@ describe('Proxy', function() {
         done();
       })
     })
+  })
 
+  describe('Target Allocation', function() {
 
+    it('_next should allocate at most 2 targets', function(done) {
+      etcd.set('/services/zetta/foo:3001', JSON.stringify({"type":"cloud-target","url":"http://foo:3001","created":"2015-04-29T17:55:01.000Z","version":"1"}));
+      etcd.set('/services/zetta/foo:3002', JSON.stringify({"type":"cloud-target","url":"http://foo:3002","created":"2015-04-29T17:55:01.000Z","version":"1"}));
+      etcd.set('/services/zetta/foo:3003', JSON.stringify({"type":"cloud-target","url":"http://foo:3003","created":"2015-04-29T17:55:01.000Z","version":"1"}));
+      etcd._trigger('/services/zetta', []);
+
+      var finished = 0;
+      function check(err, server) {
+        if (err) {
+          throw err;
+        }
+        finished++;
+        if (finished === 3) {
+          var count = 0;
+          Object.keys(etcd.keyValuePairs.services.zetta).forEach(function(key) {
+            var target = JSON.parse(etcd.keyValuePairs.services.zetta[key]);
+            if (target.tenantId === 'default') {
+              count++;
+            }
+          });
+
+          assert.equal(count, 2);
+          done();
+        }
+      }
+      
+      proxy._next('default', check);
+      proxy._next('default', check);
+      proxy._next('default', check);
+    })
   })
     
 });

@@ -181,12 +181,15 @@ MockEtcd.prototype.watcher = function(key) {
 
 MockEtcd.prototype.compareAndSwap = function(key, newRecord, oldRecord, cb) {
   var self = this;
-  this.get(key, function(err, results) {
-    var item = results.node.value;
-    if (item === oldRecord) {
-      self.set(key, newRecord, cb);
-    }
-  });
+  // make compare and swap async 
+  setTimeout(function() {
+    self.get(key, function(err, results) {
+      var item = results.node.value;
+      if (item === oldRecord) {
+        self.set(key, newRecord, cb);
+      }
+    });
+  }, 0);
 };
 
 //Trigger a watcher event for a key.
