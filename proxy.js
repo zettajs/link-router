@@ -279,8 +279,6 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
         upgradeSocket.on('close', cleanup);
 
         function cleanup() {
-          console.log('Proxy Peer:', tenantId, targetName, 'Cleanup');
-
           clearInterval(timer);          
           var idx = self._peerSockets.indexOf(peerObj);
           if (idx >= 0) {
