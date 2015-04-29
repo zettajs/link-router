@@ -257,48 +257,45 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
       };
 
       var target = http.request(options);
-
       target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
         var timer = null;
         var code = targetResponse.statusCode;
+        var peerObj = { tenantId: tenantId,
+                        targetName: targetName,
+                        upgradeSocket: upgradeSocket,
+                        socket: socket
+                      };
 
-        var peerObj = { tenantId: tenantId, targetName: targetName, upgradeSocket: upgradeSocket, socket: socket };
 
         var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
-
         var headers = Object.keys(targetResponse.headers).map(function(header) {
           return header + ': ' + targetResponse.headers[header];
         });
 
-        if (code === 101) {
-          self._peerSockets.push(peerObj);
-          self._routerClient.add(tenantId, targetName, serverUrl, function(err) {
-            next();
-            timer = setInterval(function() {
-              self._routerClient.add(tenantId, targetName, serverUrl, function(err) {});
-            }, 60000);
-          });
-        } else {
-          next();
+        socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
+        upgradeSocket.pipe(socket).pipe(upgradeSocket);
+
+        socket.on('close', cleanup);
+        upgradeSocket.on('close', cleanup);
+
+        function cleanup() {
+          console.log('Proxy Peer:', tenantId, targetName, 'Cleanup');
+
+          clearInterval(timer);          
+          var idx = self._peerSockets.indexOf(peerObj);
+          if (idx >= 0) {
+            self._peerSockets.splice(idx, 1);
+          }
+          self._routerClient.remove(tenantId, targetName, function(err) {}); 
         }
 
-        function next() {
-          socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
-          upgradeSocket.pipe(socket).pipe(upgradeSocket);
-
-          upgradeSocket.on('close', function() {
-            clearInterval(timer);
-            
-            var idx = self._peerSockets.indexOf(peerObj);
-            if (idx >= 0) {
-              self._peerSockets.splice(idx, 1);
-            }
-
-            self._routerClient.remove(tenantId, targetName, function(err) {
-            });
-          });
-
-        };
+        if (code === 101) {
+          self._peerSockets.push(peerObj);
+          self._routerClient.add(tenantId, targetName, serverUrl, function(err) {});
+          timer = setInterval(function() {
+            self._routerClient.add(tenantId, targetName, serverUrl, function(err) {});
+          }, 60000);
+        }
       });
 
       target.on('error', function() {
