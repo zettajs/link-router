@@ -453,7 +453,10 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
         });
       }
     });
-    upgradeSocket.on('error', function(err) {});
+
+    upgradeSocket.on('error', function(err) {
+      console.error('Target Ws Socket Error:', tenantId, targetName, err);
+    });
   });
 
   target.on('error', function() {
