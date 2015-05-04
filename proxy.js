@@ -51,7 +51,7 @@ Proxy.prototype._setup = function() {
     var parsed = url.parse(request.url, true);
     
     if (parsed.path === '/') {
-      self._serveRoot(request, response)
+      self._serveRoot(request, response);
     } else {
       self._proxyRequest(request, response);
     }
@@ -172,6 +172,11 @@ Proxy.prototype._next = function(tenantId, cb) {
           self._next(tenantId, cb);
           return;
         }
+        
+        // handle race condition if service registy update event run's before cb is called
+        if (!self._servers[tenantId]) {
+          self._servers[tenantId] = [];
+        }
 
         self._servers[tenantId].push(newRecord);
         self._next(tenantId, cb);
@@ -196,22 +201,6 @@ Proxy.prototype._next = function(tenantId, cb) {
  
 }
 
-/*Proxy.prototype._shuffleServers = function(tenantId) {
-  var counter = this._servers[tenantId].length;
-  var temp;
-  var index;
-
-  while (counter > 0) {
-    index = Math.floor(Math.random() * counter);
-
-    counter--;
-
-    temp = this._servers[tenantId][counter];
-    this._servers[tenantId][counter] = this._servers[tenantId][index];
-    this._servers[tenantId][index] = temp;
-  }
-};*/
-
 Proxy.prototype._proxyPeerConnection = function(request, socket) {
   var self = this;
   var parsed = url.parse(request.url, true);
@@ -222,6 +211,10 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
   if (match) {
     targetName = decodeURIComponent(/^\/peers\/(.+)$/.exec(parsed.pathname)[1]);
   }
+
+  socket.on('error', function(err) {
+    console.error('Peer Socket Error:', tenantId, targetName, err);
+  });
 
   this._routerClient.get(tenantId, targetName, function(err, peer) {
     if (err && err.error.errorCode !== 100) {
@@ -236,7 +229,7 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
     
     self._next(tenantId, function(err, serverUrl) {
       if(err) {
-        console.log(err);
+        console.error('Peer Socket Failed to allocated target:', err);
         socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
         return;
       }
@@ -272,6 +265,10 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
           return header + ': ' + targetResponse.headers[header];
         });
 
+        socket.on('error', function(err) {
+          console.error('Target Socket Error:', tenantId, targetName, err);
+        });
+
         socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
         upgradeSocket.pipe(socket).pipe(upgradeSocket);
 
@@ -293,6 +290,8 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
           timer = setInterval(function() {
             self._routerClient.add(tenantId, targetName, serverUrl, function(err) {});
           }, 60000);
+        } else {
+          socket.end();
         }
       });
 
@@ -359,24 +358,33 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
   }
 
   var urlHash = [tenantId, targetName, this._router[tenantId][targetName], request.url].map(encodeURIComponent).join(':');
-
   if (!this._subscriptions.hasOwnProperty(urlHash)) {
     this._subscriptions[urlHash] = [];
   }
 
-  socket.on('close', function() {
+  socket.on('error', function(err) {
+    console.error('Client Socket Error:', tenantId, targetName, err);
+  });
+
+  function removeSocketFromCache() {
     var idx = self._subscriptions[urlHash].indexOf(socket);
     if (idx >= 0) {
       self._subscriptions[urlHash].splice(idx, 1);
     }
-
-    if(self._subscriptions[urlHash].length === 0) {
+    
+    if (self._subscriptions[urlHash].length === 0) {
       if (self._cache[urlHash]) {
         self._cache[urlHash].end();
       }
       delete self._subscriptions[urlHash];
       delete self._cache[urlHash];
     }
+  }
+
+  var cleanup = function() {};
+
+  socket.on('close', function() {
+    cleanup();
   });
 
   if (this._cache.hasOwnProperty(urlHash)) {
@@ -389,9 +397,12 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     var headers = ['Upgrade: websocket', 'Connection: Upgrade',
      'Sec-WebSocket-Accept: ' + serverKey]
 
-    socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
-
     this._subscriptions[urlHash].push(socket);
+    cleanup = function() {
+      removeSocketFromCache();
+    };
+
+    socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
     return;
   }
 
@@ -405,11 +416,14 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
   };
 
   var target = http.request(options);
+
+  cleanup = function () {
+    target.abort();
+  };
+
   target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
     var code = targetResponse.statusCode;
-
     var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
-
     var headers = Object.keys(targetResponse.headers).map(function(header) {
       return header + ': ' + targetResponse.headers[header];
     });
@@ -418,6 +432,10 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
 
     self._cache[urlHash] = upgradeSocket;
     self._subscriptions[urlHash].push(socket);
+
+    cleanup = function() {
+      removeSocketFromCache();
+    };
 
     upgradeSocket.on('data', function(data) {
       if (self._subscriptions[urlHash]) {
@@ -434,6 +452,10 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
           socket.end();
         });
       }
+    });
+
+    upgradeSocket.on('error', function(err) {
+      console.error('Target Ws Socket Error:', tenantId, targetName, err);
     });
   });
 
