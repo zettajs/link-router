@@ -1,9 +1,17 @@
-var crypto = require('crypto');
 var http = require('http');
-var path = require('path');
 var url = require('url');
+var util = require('util');
+var EventEmitter = require('events').EventEmitter;
+var WsQueryHandler = require('./query_ws_handler.js');
+var HttpQueryHandler = require('./query_http_handler.js');
+var parseUri = require('./parse_uri');
+var joinUri = require('./join_uri');
+var getBody = require('./get_body');
+var getTenantId = require('./get_tenant_id');
+var confirmWs = require('./confirm_ws');
 
 var Proxy = module.exports = function(serviceRegistryClient, routerClient, versionClient) {
+  EventEmitter.call(this);
   var self = this;
   this._serviceRegistryClient = serviceRegistryClient;
   this._routerClient = routerClient;
@@ -17,31 +25,24 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._servers = {};
   this._hasLoadedServers = false;
   this._unallocated = [];
-
   this._peerSockets = [];
-
-  this._versionClient.on('change', function(versionObject) {
-    self._currentVersion = versionObject.version;
-  });
 
   this._setup();
 };
+util.inherits(Proxy, EventEmitter);
 
 Proxy.prototype._setup = function() {
   var self = this;
 
-  this._versionClient.get(function(err, versionObject) {
-    if(err) {
-      return;
-    }  
-
-    self._currentVersion = versionObject.version;
-  });
+  var wsQueryHandler = new WsQueryHandler(this);
+  var httpQueryHandler = new HttpQueryHandler(this);
 
   this._server.on('upgrade', function(request, socket) {
     socket.allowHalfOpen = false;
     if (/^\/peers\//.test(request.url)) {
       self._proxyPeerConnection(request, socket);
+    } else if (/^\/events\?/.test(request.url)) {
+      wsQueryHandler.wsQuery(request, socket);
     } else {
       self._proxyEventSubscription(request, socket);
     }
@@ -49,15 +50,29 @@ Proxy.prototype._setup = function() {
 
   this._server.on('request', function(request, response) {
     var parsed = url.parse(request.url, true);
-    
-    if (parsed.path === '/') {
-      self._serveRoot(request, response);
+    if (parsed.pathname === '/') {
+      if (parsed.query.ql) {
+        httpQueryHandler.serverQuery(request, response, parsed);
+      } else {
+        self._serveRoot(request, response);
+      }
     } else {
       self._proxyRequest(request, response);
     }
   });
 
-  var self = this;
+  this._versionClient.on('change', function(versionObject) {
+    self._currentVersion = versionObject.version;
+  });
+
+  this._versionClient.get(function(err, versionObject) {
+    if(err) {
+      return;
+    }  
+
+    self._currentVersion = versionObject.version;
+    self.emit('version-update', self._router);
+  });
 
   self._routerClient.on('change', function(results) {
     var tempRouter = {};
@@ -71,14 +86,16 @@ Proxy.prototype._setup = function() {
 
     self._router = tempRouter;
     self._disconnectStaleWsClients();
+    self.emit('router-update', self._router);
   });
 
   self._serviceRegistryClient.on('change', function(results) {
     self._processServerList(results);
-    //self._shuffleServers();
+    self.emit('services-update', self._servers, self._unallocated);
   });
 
   this._loadServers(function() {
+    self.emit('services-update', self._servers, self._unallocated);
   });
 };
 
@@ -205,7 +222,7 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
   var self = this;
   var parsed = url.parse(request.url, true);
   var targetName;
-  var tenantId = this._getTenantId(request);
+  var tenantId = getTenantId(request);
 
   var match = /^\/peers\/(.+)$/.exec(request.url);
   if (match) {
@@ -340,7 +357,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
   var self = this;
   var parsed = url.parse(request.url, true);
   var targetName;
-  var tenantId = this._getTenantId(request);
+  var tenantId = getTenantId(request);
 
   var match = /^\/servers\/(.+)$/.exec(request.url);
   if (match) {
@@ -388,15 +405,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
   });
 
   if (this._cache.hasOwnProperty(urlHash)) {
-    var key = request.headers['sec-websocket-key'];
-    var shasum = crypto.createHash('sha1');
-    shasum.update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11');
-    var serverKey = shasum.digest('base64');
-
-    var responseLine = 'HTTP/1.1 101 Switching Protocols';
-    var headers = ['Upgrade: websocket', 'Connection: Upgrade',
-     'Sec-WebSocket-Accept: ' + serverKey]
-
+    confirmWs(request, socket);
     this._subscriptions[urlHash].push(socket);
     cleanup = function() {
       removeSocketFromCache();
@@ -470,7 +479,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
 Proxy.prototype._proxyRequest = function(request, response) {
   var parsed = url.parse(request.url, true);
   var targetName;
-  var tenantId = this._getTenantId(request);
+  var tenantId = getTenantId(request);
 
   var match = /^\/servers\/(.+)$/.exec(request.url);
   if (match) {
@@ -479,26 +488,13 @@ Proxy.prototype._proxyRequest = function(request, response) {
     return;
   }
 
-  if (!this._router.hasOwnProperty(tenantId) || !this._router[tenantId].hasOwnProperty(targetName)) {
-    var self = this;
-    this._routerClient.get(tenantId, targetName, function(err, serverUrl) {
-      if (serverUrl) {
-        if (!self._router.hasOwnProperty(tenantId)) {
-          self._router[tenantId] = {};
-        }
+  this.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
+    if (err) {
+      response.statusCode = 404;
+      response.end();
+      return;
+    }
 
-        self._router[tenantId][targetName] = serverUrl;
-        next(serverUrl);
-      } else {
-        response.statusCode = 404;
-        response.end();
-      }
-    });
-  } else {
-    next(this._router[tenantId][targetName]);
-  }
-
-  function next(serverUrl) {
     var server = url.parse(serverUrl);
 
     var options = {
@@ -526,21 +522,21 @@ Proxy.prototype._proxyRequest = function(request, response) {
       response.end();
     });
 
-    request.pipe(target);
-  };
+    request.pipe(target);    
+  });
 };
 
 Proxy.prototype._serveRoot = function(request, response) {
   var self = this;
 
-  var tenantId = this._getTenantId(request);
+  var tenantId = getTenantId(request);
 
   var body = {
     class: ['root'],
     links: [
       {
         rel: ['self'],
-        href: self._parseUri(request)
+        href: parseUri(request)
       }
     ]
   };
@@ -551,7 +547,7 @@ Proxy.prototype._serveRoot = function(request, response) {
         body.links.push({
           title: peer.name,
           rel: ['http://rels.zettajs.io/peer'],
-          href: self._joinUri(request, '/servers/' + peer.name)
+          href: joinUri(request, '/servers/' + peer.name)
         });
       });
     }
@@ -561,41 +557,45 @@ Proxy.prototype._serveRoot = function(request, response) {
   });
 };
 
-Proxy.prototype._parseUri = function(request) {
-  var xfp = request.headers['x-forwarded-proto'];
-  var xfh = request.headers['x-forwarded-host'];
-  var protocol;
 
-  if (xfp && xfp.length) {
-    protocol = xfp.replace(/\s*/, '').split(',')[0];
-  } else {
-    protocol = request.connection.encrypted ? 'https' : 'http';
+// Return all targets for a tenantId with the current active version and any targets that have
+// peers currently connected.
+Proxy.prototype.activeTargets = function(tenantId) {
+  var self = this;
+  
+  var activeServers = [];
+  if (this._router.hasOwnProperty(tenantId)) {
+    Object.keys(self._router[tenantId]).forEach(function(peerName) {
+      activeServers.push(self._router[tenantId][peerName]);
+    });
   }
+  
+  if (!this._servers.hasOwnProperty(tenantId)) {
+    return [];
+  }
+  
+  return this._servers[tenantId].filter(function(server) {
+    return server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0;
+  });
+};
 
-  var host = xfh || request.headers['host'];
 
-  if (!host) {
-    var address = request.connection.address();
-    host = address.address;
-    if (address.port) {
-      if (!(protocol === 'https' && address.port === 443) && 
-          !(protocol === 'http' && address.port === 80)) {
-        host += ':' + address.port
+Proxy.prototype.lookupPeersTarget = function(tenantId, targetName, cb) {
+  var self = this;
+  if (!this._router.hasOwnProperty(tenantId) || !this._router[tenantId].hasOwnProperty(targetName)) {
+    this._routerClient.get(tenantId, targetName, function(err, serverUrl) {
+      if (serverUrl) {
+        if (!self._router.hasOwnProperty(tenantId)) {
+          self._router[tenantId] = {};
+        }
+
+        self._router[tenantId][targetName] = serverUrl;
+        cb(null, serverUrl);
+      } else {
+        cb(new Error('No server found.'));
       }
-    }
+    });
+  } else {
+    cb(null, this._router[tenantId][targetName]);
   }
-
-  return protocol + '://' + path.join(host, request.url);
-};
-
-Proxy.prototype._joinUri = function(request, pathname) {
-  var uri = this._parseUri(request);
-  var parsed = url.parse(uri);
-  parsed.pathname = path.join(parsed.pathname, pathname).replace(/\\/g, '/');
-
-  return url.format(parsed);
-};
-
-Proxy.prototype._getTenantId = function(request) {
-  return request.headers['x-apigee-iot-tenant-id'] || 'default';
-};
+}
