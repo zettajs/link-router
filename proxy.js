@@ -411,7 +411,6 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
       removeSocketFromCache();
     };
 
-    socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
     return;
   }
 
