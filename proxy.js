@@ -289,9 +289,6 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
         socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
         upgradeSocket.pipe(socket).pipe(upgradeSocket);
 
-        socket.on('close', cleanup);
-        upgradeSocket.on('close', cleanup);
-
         function cleanup() {
           clearInterval(timer);          
           var idx = self._peerSockets.indexOf(peerObj);
@@ -300,6 +297,9 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
           }
           self._routerClient.remove(tenantId, targetName, function(err) {}); 
         }
+
+        socket.on('close', cleanup);
+        upgradeSocket.on('close', cleanup);
 
         if (code === 101) {
           self._peerSockets.push(peerObj);
