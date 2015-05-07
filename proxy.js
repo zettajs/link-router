@@ -552,6 +552,19 @@ Proxy.prototype._serveRoot = function(request, response) {
       });
     }
 
+    body.actions = [
+      { 
+        name: 'query-devices',
+        method: 'GET',
+        href: parseUri(request),
+        type: 'application/x-www-form-urlencoded',
+        fields: [
+          { name: 'server', type: 'text' },
+          { name: 'ql', type: 'text' }
+        ]
+      }
+    ];
+
     response.setHeader('Access-Control-Allow-Origin', '*');
     response.end(JSON.stringify(body));
   });
