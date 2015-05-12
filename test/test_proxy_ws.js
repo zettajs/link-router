@@ -93,6 +93,20 @@ describe('Proxy Websockets', function() {
       });
   })
 
+  it('ws should not disconnect after etcd router updates', function(done) {
+    var c = zrx()
+      .load(proxyUrl)
+      .peer('hub.1')
+      .device(function(d) { return d.type === 'photocell'; })
+      .stream('intensity')
+      .subscribe(function() {
+        etcd._trigger('/router/zetta', []);        
+        setTimeout(function() {
+          assert.equal(Object.keys(proxy._cache).length, 1);
+          done();
+        }, 10);
+      });
+  })
 
   it('second ws client connecting should continue to recv data after first client disconnects', function(done) {
     var createClient = function(cb) {
