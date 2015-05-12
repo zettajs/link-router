@@ -94,17 +94,21 @@ describe('Proxy Websockets', function() {
   })
 
   it('ws should not disconnect after etcd router updates', function(done) {
+    var count = 0;
     var c = zrx()
       .load(proxyUrl)
       .peer('hub.1')
       .device(function(d) { return d.type === 'photocell'; })
       .stream('intensity')
       .subscribe(function() {
-        etcd._trigger('/router/zetta', []);        
-        setTimeout(function() {
-          assert.equal(Object.keys(proxy._cache).length, 1);
-          done();
-        }, 10);
+        if (count === 0) {
+          count++;
+          etcd._trigger('/router/zetta', []);        
+          setTimeout(function() {
+            assert.equal(Object.keys(proxy._cache).length, 1);
+            done();
+          }, 10);
+        }
       });
   })
 

@@ -329,7 +329,7 @@ Proxy.prototype._disconnectStaleWsClients = function() {
   // make sure target exists in router and is the same as what is subscribed to
   Object.keys(this._cache).forEach(function(hash) {
     var obj = parseSubscription(hash);
-    if (!self._router[obj.tenantId] || !self._router[obj.tenantId][obj.targetName] || self._router[obj.tenantId][obj.targetName] !== obj.tagetHost) {
+    if (!self._router[obj.tenantId] || !self._router[obj.tenantId][obj.targetName] || self._router[obj.tenantId][obj.targetName] !== obj.targetHost) {
       // end subscription to zetta target, will close all clients
       self._cache[hash].end();
     }
