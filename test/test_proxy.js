@@ -53,6 +53,21 @@ describe('Proxy', function() {
         .expect('Access-Control-Allow-Origin', '*', done);
     });
 
+    it('root req will contain action to query', function(done) {
+      request(proxy._server)
+        .get('/')
+        .expect(getBody(function(res, body) {
+          assert.equal(body.actions.length, 1);
+          var action = body.actions[0];
+          assert.equal(action.name, 'query-devices');
+          assert.equal(action.method, 'GET');
+          assert.equal(action.type, 'application/x-www-form-urlencoded');
+          assert.equal(action.fields.length, 2);
+        }))
+        .expect(200)
+        .end(done);
+    });
+
     it('will have servers within the router in the API response', function(done) {
       etcd.set('/router/zetta/default/foo', '{"url":"http://example.com/", "name": "foo", "tenantId": "default"}');
       etcd._trigger('/router/zetta/default', []);
