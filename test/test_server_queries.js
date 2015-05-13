@@ -181,7 +181,7 @@ describe('Queries', function() {
       var reqUrl = url.format({ pathname: '/', query: { server: '*', ql: 'where asd type = "photocell"' } });
       request(proxy._server)
         .get(reqUrl)
-        .expect(200)
+        .expect(400)
         .expect(getBody(function(res, body) {
           assert(body.class.indexOf('query-error') > -1);
           assert(body.properties.message);
@@ -344,7 +344,7 @@ describe('Queries', function() {
       var reqUrl = url.format({ pathname: '/', query: { server: 'hub.1', ql: 'where asd type = "photocell"' } });
       request(proxy._server)
         .get(reqUrl)
-        .expect(200)
+        .expect(400)
         .expect(getBody(function(res, body) {
           assert(body.class.indexOf('query-error') > -1);
           assert(body.properties.message);

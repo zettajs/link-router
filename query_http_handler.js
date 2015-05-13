@@ -24,6 +24,7 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
     caql.parse(parsed.query.ql);
   } catch (err) {
     var body = this._buildQueryError(request, err);
+    response.statusCode = 400;
     response.setHeader('Access-Control-Allow-Origin', '*');
     response.end(JSON.stringify(body));
     return;    
@@ -74,6 +75,7 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
     caql.parse(parsed.query.ql);
   } catch (err) {
     var body = this._buildQueryError(request, err);
+    response.statusCode = 400;
     response.setHeader('Access-Control-Allow-Origin', '*');
     response.end(JSON.stringify(body));
     return;    
