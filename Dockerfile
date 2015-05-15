@@ -1,5 +1,5 @@
-FROM       mdobson/node-zetta-docker
-MAINTAINER Matthew Dobson <mdobson@apigee.com>
+FROM  node:0.12-slim
+MAINTAINER Matthew Dobson
 
 ADD     . /proxy_server
 WORKDIR /proxy_server

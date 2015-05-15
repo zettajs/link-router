@@ -486,7 +486,7 @@ Proxy.prototype._proxyRequest = function(request, response) {
   } else {
     return;
   }
-
+  
   this.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
     if (err) {
       response.statusCode = 404;
@@ -495,6 +495,7 @@ Proxy.prototype._proxyRequest = function(request, response) {
     }
 
     var server = url.parse(serverUrl);
+
 
     var options = {
       method: request.method,
@@ -505,6 +506,11 @@ Proxy.prototype._proxyRequest = function(request, response) {
     };
 
     var target = http.request(options);
+
+    // close target req if client is closed before target finishes
+    response.on('close', function() {
+      target.abort();
+    });
 
     target.on('response', function(targetResponse) {
       response.statusCode = targetResponse.statusCode;
