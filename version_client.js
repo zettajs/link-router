@@ -13,7 +13,7 @@ var VersionClient = module.exports = function(options) {
     this._client = options.client;
   }
 
-  this._watcher = this._client.watcher(this._etcdDirectory);
+  this._watcher = this._client.watcher(this._etcdDirectory, null, { consistent: true });
   this._watcher.on('change', function(results) {
     var versionObject = null;
     try {
