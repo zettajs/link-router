@@ -152,7 +152,6 @@ describe('Proxy', function() {
       etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
       etcd._trigger('/services/zetta', []);
       proxy._next('default', function(err, serverUrl) {
-        console.log('done1')
         assert.equal('http://example.com/', serverUrl);
         etcd._trigger('/zetta/version', JSON.stringify({ version: '2'}));
         proxy._next('default', function(err, serverUrl) {
