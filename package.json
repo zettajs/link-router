@@ -21,7 +21,7 @@
     "mocha": "^2.2.1",
     "supertest": "^0.15.0",
     "ws": "^0.7.1",
-    "zetta": "^0.27.0",
+    "zetta": "^0.28.0",
     "zetta-led-mock-driver": "^0.7.1",
     "zetta-photocell-mock-driver": "^0.4.0",
     "zrx": "^0.5.0"
