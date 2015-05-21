@@ -10,7 +10,7 @@ var ServiceRegistryClient = require('../service_registry_client');
 var RouterClient = require('../router_client');
 var Proxy = require('../proxy');
 
-describe('Proxy', function() {
+describe('Proxy Connection', function() {
   var hub = null;
   var proxy = null;
   var etcd = null;
@@ -145,15 +145,14 @@ describe('Proxy', function() {
   });
 
   it('will return a 503 when no unallocated servers are available', function(done) {
-    proxy._unallocated = [];
-
+    etcd.keyValuePairs.services.zetta = {};
     request(proxy._server)
       .get('/peers/test?connectionId=1234567890')
       .set('Upgrade', 'websocket')
       .set('Connection', 'Upgrade')
       .set('Sec-WebSocket-Version', '13')
       .set('Sec-WebSocket-Key', new Buffer('13' + '-' + Date.now()).toString('base64'))
-      .set('X-Apigee-IoT-Tenant-Id', 'test')
+      .set('X-Apigee-IoT-Tenant-Id', 'no-tenant-id')
       .expect(503)
       .end(done);
   });
