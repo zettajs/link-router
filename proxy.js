@@ -4,6 +4,7 @@ var util = require('util');
 var EventEmitter = require('events').EventEmitter;
 var WsQueryHandler = require('./query_ws_handler.js');
 var HttpQueryHandler = require('./query_http_handler.js');
+var TargetAllocation = require('./target_allocation');
 var parseUri = require('./parse_uri');
 var joinUri = require('./join_uri');
 var getBody = require('./get_body');
@@ -17,15 +18,13 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._routerClient = routerClient;
   this._versionClient = versionClient;
   this._currentVersion = null;
-  this._serverIndexes = {};
   this._server = http.createServer();
   this._router = {};
   this._cache = {};
   this._subscriptions = {};
   this._servers = {};
-  this._hasLoadedServers = false;
-  this._unallocated = [];
   this._peerSockets = [];
+  this._targetAllocation = new TargetAllocation(this);
 
   this._setup();
 };
@@ -91,20 +90,18 @@ Proxy.prototype._setup = function() {
 
   self._serviceRegistryClient.on('change', function(results) {
     self._processServerList(results);
-    self.emit('services-update', self._servers, self._unallocated);
+    self.emit('services-update', self._servers);
   });
 
   this._loadServers(function() {
-    self.emit('services-update', self._servers, self._unallocated);
+    self.emit('services-update', self._servers);
   });
 };
 
 Proxy.prototype._processServerList = function(servers) {
   var tempServers = {}; 
-  var unallocated = [];
   servers.forEach(function(server) {
     if (!server.tenantId) {
-      unallocated.push(server);
       return;
     }
 
@@ -115,7 +112,6 @@ Proxy.prototype._processServerList = function(servers) {
   });
 
   this._servers = tempServers;
-  this._unallocated = unallocated;
 };
 
 Proxy.prototype._loadServers = function(cb) {
@@ -147,75 +143,7 @@ Proxy.prototype._loadServers = function(cb) {
 
 Proxy.prototype._next = function(tenantId, cb) {
   var self = this;
-
-  if (!self._servers.hasOwnProperty(tenantId)) {
-    self._servers[tenantId] = [];
-  }
-
-  if (!self._serverIndexes.hasOwnProperty(tenantId)) {
-    self._serverIndexes[tenantId] = 0;
-  }
-
-  // filter servers by version
-  var servers = self._servers[tenantId].filter(function(server) {
-    return server.version === self._currentVersion;
-  });
-
-  // return the next unallocated server filtered by current version
-  function nextUnallocated() {
-    var ret = undefined;
-    self._unallocated.some(function(server, idx, arr) {
-      if (server.version === self._currentVersion) {
-        ret = arr[idx];
-        arr.splice(idx, 1);
-        return true;
-      }
-    });
-    return ret;
-  }
-
-  if (servers.length < 2) {
-    var unallocated = nextUnallocated();
-    if (unallocated) {
-      var newRecord = {
-        url: unallocated.url,
-        tenantId: tenantId,
-        created: unallocated.created,
-        version: unallocated.version
-      };
-
-      self._serviceRegistryClient.allocate('cloud-target', unallocated, newRecord, function(err) {
-        if (err) {
-          self._next(tenantId, cb);
-          return;
-        }
-        
-        // handle race condition if service registy update event run's before cb is called
-        if (!self._servers[tenantId]) {
-          self._servers[tenantId] = [];
-        }
-
-        self._servers[tenantId].push(newRecord);
-        self._next(tenantId, cb);
-        return;
-      });
-      return;
-    } else if (servers.length > 0) {
-      // TODO: handle cases where there are not any more instances to allocate.
-      // continue to use self._servers[tenantId] for servers
-    } else {
-      cb(new Error('No available target servers for tenant `' + tenantId + '`.'));
-      return;
-    }
-  }
-
-  var server = servers[self._serverIndexes[tenantId]++ % servers.length];
-  if(server) {
-    cb(null, server.url);
-  } else { 
-    cb(new Error('No Server Found'));
-  }
- 
+  return this._targetAllocation.lookup(tenantId, cb);
 }
 
 Proxy.prototype._proxyPeerConnection = function(request, socket) {
@@ -589,11 +517,25 @@ Proxy.prototype.activeTargets = function(tenantId) {
   }
   
   if (!this._servers.hasOwnProperty(tenantId)) {
-    return [];
+    return activeServers;
   }
   
   return this._servers[tenantId].filter(function(server) {
     return server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0;
+  });
+};
+
+
+// Return all targets for a tenantId with the current version
+Proxy.prototype.targets = function(tenantId) {
+  var self = this;
+
+  if (!this._servers.hasOwnProperty(tenantId)) {
+    return [];
+  }
+
+  return this._servers[tenantId].filter(function(server) {
+    return server.version === self._currentVersion;
   });
 };
 
