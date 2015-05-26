@@ -15,13 +15,11 @@ module.exports = function(request) {
 
   if (!host) {
     var address = request.connection.address();
-    if (address) {
-      host = address.address;
-      if (address.port) {
-        if (!(protocol === 'https' && address.port === 443) && 
-            !(protocol === 'http' && address.port === 80)) {
-          host += ':' + address.port
-        }
+    host = address.address;
+    if (address.port) {
+      if (!(protocol === 'https' && address.port === 443) && 
+          !(protocol === 'http' && address.port === 80)) {
+        host += ':' + address.port
       }
     }
   }
