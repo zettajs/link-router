@@ -474,7 +474,16 @@ Proxy.prototype._serveRoot = function(request, response) {
     ]
   };
 
+  var clientAborted = false;
+  request.on('close', function() {
+    clientAborted = true;
+  });
+
   var entities = this._routerClient.findAll(tenantId, function(err, results) {
+    if (clientAborted) {
+      return;
+    }
+
     if (results) {
       results.forEach(function(peer) {
         body.links.push({
