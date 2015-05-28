@@ -1,7 +1,7 @@
 var assert = require('assert');
 var request = require('supertest');
 var zetta = require('zetta');
-
+var StatsClient = require('stats-client');
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
 var MockEtcd = require('./mocks/mock_etcd');
@@ -57,8 +57,8 @@ describe('Proxy Connection', function() {
 
       var cloud = 'http://localhost:' + target.httpServer.server.address().port;
       serviceRegistryClient.add('cloud-target', cloud, '1');
-
-      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient); 
+      var statsClient = new StatsClient('localhost:8125');
+      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient); 
       proxy.listen(0, function(err) {
         if(err) {
           return done(err);

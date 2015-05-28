@@ -8,8 +8,20 @@ var getTenantId = require('./get_tenant_id');
 var confirmWs = require('./confirm_ws');
 
 var Handler = module.exports = function(proxy) {
+  var self = this;
   this.proxy = proxy;
   this._cache = {};
+
+  setInterval(function() {
+    Object.keys(self._cache).forEach(function(tenant) {
+      var count = 0;
+      Object.keys(self._cache[tenant]).forEach(function(obj) {
+        count += obj.clients.length;
+      });
+
+      self.proxy._statsClient.count('ws.query', count, { tenant: tenant });
+    });
+  }, 2000);
 };
 
 Handler.prototype.wsQuery = function(request, socket) {
@@ -18,6 +30,8 @@ Handler.prototype.wsQuery = function(request, socket) {
   var parsed = url.parse(request.url, true);
   var queryHash = parsed.query.topic;
   var cache = this._getCacheObj(tenantId, queryHash);
+
+  self.proxy._statsClient.increment('http.req.wsquery.status.1xx', { tenant: tenantId });
 
   socket.on('error', function(err) {
     console.error('Client Query Ws Error:', tenantId, err);

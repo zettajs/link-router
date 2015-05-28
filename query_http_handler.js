@@ -5,6 +5,7 @@ var caql = require('caql');
 var parseUri = require('./parse_uri');
 var getBody = require('./get_body');
 var getTenantId = require('./get_tenant_id');
+var statusCode = require('./status_code');
 
 var Handler = module.exports = function(proxy) {
   this.proxy = proxy;
@@ -19,10 +20,12 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
 
   var tenantId = getTenantId(request);
   var targetName = parsed.query.server;
+  var startTime = new Date().getTime();
 
   try {
     caql.parse(parsed.query.ql);
   } catch (err) {
+    self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
     var body = this._buildQueryError(request, err);
     response.statusCode = 400;
     response.setHeader('Access-Control-Allow-Origin', '*');
@@ -34,6 +37,7 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
 
   this.proxy.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
     if (err) {
+      self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
       response.setHeader('Access-Control-Allow-Origin', '*');
       response.end(JSON.stringify(body));
       return;
@@ -51,6 +55,9 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
     var target = http.request(options);
     target.on('response', function(targetResponse) {
       response.statusCode = targetResponse.statusCode;
+      self.proxy._statsClient.increment('http.req.query.status.' + statusCode(response.statusCode), { tenant: tenantId });
+      var duration = new Date().getTime() - startTime;
+      self.proxy._statsClient.timing('http.req.query', duration, { tenant: tenantId });
       Object.keys(targetResponse.headers).forEach(function(header) {
         response.setHeader(header, targetResponse.headers[header]);
       });
@@ -58,6 +65,7 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
     });
 
     target.on('error', function() {
+      self.proxy._statsClient.increment('http.req.query.status.5xx', { tenant: tenantId });
       response.statusCode = 500;
       response.end();
     });
@@ -70,10 +78,12 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
 Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
   var self = this;
   var tenantId = getTenantId(request);
+  var startTime = new Date().getTime();
 
   try {
     caql.parse(parsed.query.ql);
   } catch (err) {
+    self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
     var body = this._buildQueryError(request, err);
     response.statusCode = 400;
     response.setHeader('Access-Control-Allow-Origin', '*');
@@ -88,6 +98,7 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
   });
 
   if (servers.length === 0) {
+    self.proxy._statsClient.increment('http.req.query.status.2xx', { tenant: tenantId });
     response.setHeader('Access-Control-Allow-Origin', '*');
     response.end(JSON.stringify(body));
     return;
@@ -134,6 +145,7 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
     target.end();
   }, function(err, results) {
     if (err) {
+      self.proxy._statsClient.increment('http.req.query.status.5xx', { tenant: tenantId });
       response.statusCode = 500;
       response.end();
       return;
@@ -145,6 +157,10 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
     includes.forEach(function(ret) {
       body.entities = body.entities.concat(ret.json.entities);
     });
+    
+    self.proxy._statsClient.increment('http.req.query.status.2xx', { tenant: tenantId });
+    var duration = new Date().getTime() - startTime;
+    self.proxy._statsClient.timing('http.req.query', duration, { tenant: tenantId });
 
     response.setHeader('Access-Control-Allow-Origin', '*');
     response.end(JSON.stringify(body));

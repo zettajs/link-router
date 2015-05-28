@@ -4,6 +4,7 @@ var request = require('supertest');
 var zetta = require('zetta');
 var Led = require('zetta-led-mock-driver');
 var WebSocket = require('ws');
+var StatsClient = require('stats-client');
 
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
@@ -68,7 +69,8 @@ describe('Queries', function() {
     })
     
     function startProxy() {
-      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient); 
+      var statsClient = new StatsClient('localhost:8125');
+      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient); 
       proxy.listen(0, function(err) {
         if(err) {
           return done(err);
