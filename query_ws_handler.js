@@ -19,9 +19,9 @@ var Handler = module.exports = function(proxy) {
         count += obj.clients.length;
       });
 
-      self.proxy._statsClient.count('ws.query', count, { tenant: tenant });
+      self.proxy._statsClient.gauge('ws.query', count, { tenant: tenant });
     });
-  }, 2000);
+  }, 5000);
 };
 
 Handler.prototype.wsQuery = function(request, socket) {

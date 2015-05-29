@@ -120,7 +120,7 @@ Proxy.prototype._setup = function() {
     });
 
     Object.keys(counts).forEach(function(tenant) {
-      self._statsClient.count('ws.peers', counts[tenant], { tenant: tenant });
+      self._statsClient.gauge('ws.peers', counts[tenant], { tenant: tenant });
     });
 
     var wsCounts = {};
@@ -132,10 +132,10 @@ Proxy.prototype._setup = function() {
       wsCounts[parsed.tenantId]++;
     });
     Object.keys(wsCounts).forEach(function(tenant) {
-      self._statsClient.count('ws.event', wsCounts[tenant], { tenant: tenant });
+      self._statsClient.gauge('ws.event', wsCounts[tenant], { tenant: tenant });
     });
 
-  }, 2000);
+  }, 5000);
 
 };
 

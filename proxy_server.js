@@ -21,7 +21,7 @@ var routerClient = new RouterClient(opts);
 
 var versionClient = new VersionClient(opts);
 
-var statsClient = new StatsClient('localhost:8125', {  host: opts.host });
+var statsClient = new StatsClient('localhost:8125', {  routerHost: process.env.COREOS_PRIVATE_IPV4 });
 
 var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient);
 proxy.listen(port, function() {
