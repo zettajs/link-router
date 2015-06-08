@@ -28,8 +28,11 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
     self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
     var body = this._buildQueryError(request, err);
     response.statusCode = 400;
+    var bodyText = JSON.stringify(body);
+    response.setHeader('Content-Type', 'application/vnd.siren+json');
+    response.setHeader('Content-Length', bodyText.length);
     response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(JSON.stringify(body));
+    response.end(bodyText);
     return;    
   }
 
@@ -38,8 +41,12 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
   this.proxy.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
     if (err) {
       self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
+
+      var bodyText = JSON.stringify(body);
+      response.setHeader('Content-Type', 'application/vnd.siren+json');
+      response.setHeader('Content-Length', bodyText.length);
       response.setHeader('Access-Control-Allow-Origin', '*');
-      response.end(JSON.stringify(body));
+      response.end(bodyText);
       return;
     }
 
@@ -86,8 +93,11 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
     self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
     var body = this._buildQueryError(request, err);
     response.statusCode = 400;
+    var bodyText = JSON.stringify(body);
+    response.setHeader('Content-Type', 'application/vnd.siren+json');
+    response.setHeader('Content-Length', bodyText.length);
     response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(JSON.stringify(body));
+    response.end(bodyText);
     return;    
   }
 
@@ -99,8 +109,12 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
 
   if (servers.length === 0) {
     self.proxy._statsClient.increment('http.req.query.status.2xx', { tenant: tenantId });
+
+    var bodyText = JSON.stringify(body);
+    response.setHeader('Content-Type', 'application/vnd.siren+json');
+    response.setHeader('Content-Length', bodyText.length);
     response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(JSON.stringify(body));
+    response.end(bodyText);
     return;
   }
   
@@ -162,8 +176,11 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
     var duration = new Date().getTime() - startTime;
     self.proxy._statsClient.timing('http.req.query', duration, { tenant: tenantId });
 
+    var bodyText = JSON.stringify(body);
+    response.setHeader('Content-Type', 'application/vnd.siren+json');
+    response.setHeader('Content-Length', bodyText.length);
     response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(JSON.stringify(body));
+    response.end(bodyText);
   });
 };
 

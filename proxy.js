@@ -565,8 +565,11 @@ Proxy.prototype._serveRoot = function(request, response) {
     self._statsClient.timing('http.req.root', duration, { tenant: tenantId });
     self._statsClient.increment('http.req.root.status.2xx', { tenant: tenantId });
 
+    var bodyText = JSON.stringify(body);
+    response.setHeader('Content-Type', 'application/vnd.siren+json');
+    response.setHeader('Content-Length', bodyText.length);
     response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(JSON.stringify(body));
+    response.end(bodyText);
   });
 };
 

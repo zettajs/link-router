@@ -109,9 +109,24 @@ describe('Proxy', function() {
           assert.equal(body.links.length, 1);
           assert.notEqual(selfLink.rel.indexOf('self'), -1);
         }))
-        .end(done);  
+        .end(done);
     });
 
+    it('will have Content-Type header response', function(done) {
+      request(proxy._server)
+        .get('/')
+        .expect('Content-Type', 'application/vnd.siren+json')
+        .expect(200)
+        .end(done);
+    })
+
+    it('will have Content-Length header response', function(done) {
+      request(proxy._server)
+        .get('/')
+        .expect('Content-Length', /[0-9]/)
+        .expect(200)
+        .end(done);
+    })
     
   });  
   describe('Proxy updates from etcd', function() {
