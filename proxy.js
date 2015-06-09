@@ -11,6 +11,7 @@ var getBody = require('./get_body');
 var getTenantId = require('./get_tenant_id');
 var confirmWs = require('./confirm_ws');
 var statusCode = require('./status_code');
+var sirenResponse = require('./siren_response');
 
 function parseSubscription(hash) {
   var arr = hash.split(':');
@@ -565,11 +566,7 @@ Proxy.prototype._serveRoot = function(request, response) {
     self._statsClient.timing('http.req.root', duration, { tenant: tenantId });
     self._statsClient.increment('http.req.root.status.2xx', { tenant: tenantId });
 
-    var bodyText = JSON.stringify(body);
-    response.setHeader('Content-Type', 'application/vnd.siren+json');
-    response.setHeader('Content-Length', bodyText.length);
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(bodyText);
+    sirenResponse(response, 200, body);
   });
 };
 
