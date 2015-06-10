@@ -10,13 +10,25 @@ var joinUri = require('./join_uri');
 var getBody = require('./get_body');
 var getTenantId = require('./get_tenant_id');
 var confirmWs = require('./confirm_ws');
+var statusCode = require('./status_code');
 
-var Proxy = module.exports = function(serviceRegistryClient, routerClient, versionClient) {
+function parseSubscription(hash) {
+  var arr = hash.split(':');
+  return {
+    tenantId: decodeURIComponent(arr[0]),
+    targetName: decodeURIComponent(arr[1]),
+    targetHost: decodeURIComponent(arr[2]),
+    url: decodeURIComponent(arr[3])
+  };
+}
+
+var Proxy = module.exports = function(serviceRegistryClient, routerClient, versionClient, statsClient) {
   EventEmitter.call(this);
   var self = this;
   this._serviceRegistryClient = serviceRegistryClient;
   this._routerClient = routerClient;
   this._versionClient = versionClient;
+  this._statsClient = statsClient;
   this._currentVersion = null;
   this._server = http.createServer();
   this._router = {};
@@ -96,6 +108,35 @@ Proxy.prototype._setup = function() {
   this._loadServers(function() {
     self.emit('services-update', self._servers);
   });
+
+
+  setInterval(function() {
+    var counts = {};
+    self._peerSockets.forEach(function(peerObj) {
+      if (!counts[peerObj.tenantId]) {
+        counts[peerObj.tenantId] = 0;
+      }
+      counts[peerObj.tenantId]++;
+    });
+
+    Object.keys(counts).forEach(function(tenant) {
+      self._statsClient.gauge('ws.peers', counts[tenant], { tenant: tenant });
+    });
+
+    var wsCounts = {};
+    Object.keys(self._subscriptions).forEach(function(topicHash) {
+      var parsed = parseSubscription(topicHash);
+      if (!wsCounts[parsed.tenantId]) {
+        wsCounts[parsed.tenantId] = 0;
+      }
+      wsCounts[parsed.tenantId]++;
+    });
+    Object.keys(wsCounts).forEach(function(tenant) {
+      self._statsClient.gauge('ws.event', wsCounts[tenant], { tenant: tenant });
+    });
+
+  }, 5000);
+
 };
 
 Proxy.prototype._processServerList = function(servers) {
@@ -161,14 +202,18 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
     console.error('Peer Socket Error:', tenantId, targetName, err);
   });
 
+  self._statsClient.increment('http.req.peer', { tenant: tenantId });
+
   this._routerClient.get(tenantId, targetName, function(err, peer) {
     if (err && err.error.errorCode !== 100) {
       socket.end('HTTP/1.1 500 Server Error\r\n\r\n\r\n');
+      self._statsClient.increment('http.req.peer.status.5xx', { tenant: tenantId });
       return;
     }
     
     if (peer) {
       socket.end('HTTP/1.1 409 Peer Conflict\r\n\r\n\r\n');
+      self._statsClient.increment('http.req.peer.status.4xx', { tenant: tenantId });
       return;
     }
     
@@ -176,11 +221,13 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
       if(err) {
         console.error('Peer Socket Failed to allocated target:', err);
         socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
+        self._statsClient.increment('http.req.peer.status.5xx', { tenant: tenantId });
         return;
       }
 
       if (!serverUrl) {
         socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
+        self._statsClient.increment('http.req.peer.status.5xx', { tenant: tenantId });
         return;
       }
 
@@ -204,6 +251,8 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
                         socket: socket
                       };
 
+
+        self._statsClient.increment('http.req.peer.status.1xx', { tenant: tenantId });
 
         var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
         var headers = Object.keys(targetResponse.headers).map(function(header) {
@@ -243,6 +292,7 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
       target.on('error', function() {
         var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
         socket.end(responseLine);
+        self._statsClient.increment('http.req.peer.status.5xx', { tenant: tenantId });
       });
 
       request.pipe(target);
@@ -260,16 +310,6 @@ Proxy.prototype.listen = function() {
 // exists on a different target server
 Proxy.prototype._disconnectStaleWsClients = function() {
   var self = this;
-
-  function parseSubscription(hash) {
-    var arr = hash.split(':');
-    return {
-      tenantId: decodeURIComponent(arr[0]),
-      targetName: decodeURIComponent(arr[1]),
-      targetHost: decodeURIComponent(arr[2]),
-      url: decodeURIComponent(arr[3])
-    };
-  }
 
   // make sure target exists in router and is the same as what is subscribed to
   Object.keys(this._cache).forEach(function(hash) {
@@ -291,12 +331,14 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
   if (match) {
     targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
   } else {
+    self._statsClient.increment('http.req.event.status.4xx', { tenant: tenantId });
     var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
     socket.end(responseLine);
     return;
   }
 
   if (!this._router[tenantId] || !this._router[tenantId][targetName]) {
+    self._statsClient.increment('http.req.event.status.4xx', { tenant: tenantId });
     var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
     socket.end(responseLine);
     return;
@@ -335,6 +377,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
   if (this._cache.hasOwnProperty(urlHash)) {
     confirmWs(request, socket);
     this._subscriptions[urlHash].push(socket);
+    self._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
     cleanup = function() {
       removeSocketFromCache();
     };
@@ -364,6 +407,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
       return header + ': ' + targetResponse.headers[header];
     });
 
+    self._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
     socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
 
     self._cache[urlHash] = upgradeSocket;
@@ -404,9 +448,12 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
 };
 
 Proxy.prototype._proxyRequest = function(request, response) {
+  var self = this;
   var parsed = url.parse(request.url, true);
   var targetName;
   var tenantId = getTenantId(request);
+  
+  var startTime = new Date().getTime();
 
   var match = /^\/servers\/(.+)$/.exec(request.url);
   if (match) {
@@ -417,6 +464,7 @@ Proxy.prototype._proxyRequest = function(request, response) {
   
   this.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
     if (err) {
+      self._statsClient.increment('http.req.proxy.status.4xx', { tenant: tenantId });
       response.statusCode = 404;
       response.end();
       return;
@@ -447,10 +495,15 @@ Proxy.prototype._proxyRequest = function(request, response) {
         response.setHeader(header, targetResponse.headers[header]);
       });
 
+      var duration = new Date().getTime() - startTime;
+      self._statsClient.timing('http.req.proxy', duration, { tenant: tenantId });
+      self._statsClient.increment('http.req.proxy.status.' + statusCode(response.statusCode), { tenant: tenantId });
+
       targetResponse.pipe(response);
     });
 
     target.on('error', function() {
+      self._statsClient.increment('http.req.proxy.status.5xx', { tenant: tenantId });
       response.statusCode = 500;
       response.end();
     });
@@ -461,8 +514,9 @@ Proxy.prototype._proxyRequest = function(request, response) {
 
 Proxy.prototype._serveRoot = function(request, response) {
   var self = this;
-
   var tenantId = getTenantId(request);
+
+  var startTime = new Date().getTime();
 
   var body = {
     class: ['root'],
@@ -506,6 +560,10 @@ Proxy.prototype._serveRoot = function(request, response) {
         ]
       }
     ];
+
+    var duration = new Date().getTime()-startTime;
+    self._statsClient.timing('http.req.root', duration, { tenant: tenantId });
+    self._statsClient.increment('http.req.root.status.2xx', { tenant: tenantId });
 
     response.setHeader('Access-Control-Allow-Origin', '*');
     response.end(JSON.stringify(body));

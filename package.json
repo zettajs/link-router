@@ -13,6 +13,7 @@
     "caql": "^0.2.0",
     "node-etcd": "^3.0.2",
     "rx": "^2.3.25",
+    "stats-client": "^0.2.0",
     "ws": "^0.7.1"
   },
   "devDependencies": {
