@@ -163,18 +163,27 @@ Handler.prototype._syncClientWithTargets = function(cache, request, socket, serv
     };
     server = url.parse(url.format(server));
     
-    var options = {
-      method: 'GET',
-      headers: {
-        host: request.headers['host'],
-        origin: request.headers['origin']
-      },
-      hostname: server.hostname,
-      port: server.port,
-      path: server.path
-    };
+    function buildOptions(path) {
+      var options = {
+        method: 'GET',
+        headers: {},
+        hostname: server.hostname,
+        port: server.port,
+        path: path
+      };
+      
+      if (request.headers['origin']) {
+        options.headers.origin = request.headers['origin'];
+      }
 
-    var target = http.request(options);
+      if (request.headers['host']) {
+        options.headers.host = request.headers['host'];
+      }
+      
+      return options;
+    }
+
+    var target = http.request(buildOptions(server.path));
     cache.pending.push(target);
     target.on('response', function(targetResponse) {
       var idx = cache.pending.indexOf(target);
@@ -200,18 +209,7 @@ Handler.prototype._syncClientWithTargets = function(cache, request, socket, serv
         async.eachLimit(json.entities, 5, function(entity, nextDevice) {
           var devicePath = url.parse(entity.links.filter(function(l) { return l.rel.indexOf('self') >= 0;})[0].href).path;
 
-          var opts = {
-            method: 'GET',
-            headers: {
-              host: request.headers['host'],
-              origin: request.headers['origin']
-            },
-            hostname: server.hostname,
-            port: server.port,
-            path: devicePath
-          };
-
-          var deviceReq = http.request(opts, function(res) {
+          var deviceReq = http.request(buildOptions(devicePath), function(res) {
             var idx = cache.pending.indexOf(deviceReq);
             if (idx >= 0) {
               cache.pending.splice(idx, 1);
