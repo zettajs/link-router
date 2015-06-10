@@ -6,6 +6,7 @@ var parseUri = require('./parse_uri');
 var getBody = require('./get_body');
 var getTenantId = require('./get_tenant_id');
 var statusCode = require('./status_code');
+var sirenResponse = require('./siren_response');
 
 var Handler = module.exports = function(proxy) {
   this.proxy = proxy;
@@ -26,11 +27,8 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
     caql.parse(parsed.query.ql);
   } catch (err) {
     self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
-    var body = this._buildQueryError(request, err);
-    response.statusCode = 400;
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(JSON.stringify(body));
-    return;    
+    sirenResponse(response, 400, this._buildQueryError(request, err));
+    return;
   }
 
   var body = this._buildQueryResult(request);
@@ -38,8 +36,7 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
   this.proxy.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
     if (err) {
       self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
-      response.setHeader('Access-Control-Allow-Origin', '*');
-      response.end(JSON.stringify(body));
+      sirenResponse(response, 200, body);
       return;
     }
 
@@ -84,11 +81,8 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
     caql.parse(parsed.query.ql);
   } catch (err) {
     self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
-    var body = this._buildQueryError(request, err);
-    response.statusCode = 400;
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(JSON.stringify(body));
-    return;    
+    sirenResponse(response, 400, this._buildQueryError(request, err));
+    return;
   }
 
   var body = this._buildQueryResult(request);
@@ -99,8 +93,7 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
 
   if (servers.length === 0) {
     self.proxy._statsClient.increment('http.req.query.status.2xx', { tenant: tenantId });
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(JSON.stringify(body));
+    sirenResponse(response, 200, body);
     return;
   }
   
@@ -162,8 +155,7 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
     var duration = new Date().getTime() - startTime;
     self.proxy._statsClient.timing('http.req.query', duration, { tenant: tenantId });
 
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.end(JSON.stringify(body));
+    sirenResponse(response, 200, body);
   });
 };
 

@@ -144,6 +144,17 @@ describe('Queries', function() {
         .end(done);
     });
 
+    it('will have Content-Type and Content-Length in response.', function(done) {
+      var reqUrl = url.format({ pathname: '/', query: { server: '*', ql: 'where type = "photocell"' } });
+      request(proxy._server)
+        .get(reqUrl)
+        .expect('Content-Type', 'application/vnd.siren+json')
+        .expect('Content-Length', /[0-9]/)
+        .expect(200)
+        .end(done);
+    });
+
+
 
     it('links on the query response will point to proxy.', function(done) {
       var reqUrl = url.format({ pathname: '/', query: { server: '*', ql: 'where type = "led"' } });

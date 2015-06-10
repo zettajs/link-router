@@ -73,13 +73,15 @@ describe('Proxy Connection', function() {
   });  
 
   afterEach(function(done) {
-    target.httpServer.server.close();
-    hub.httpServer.server.close();
-    proxy._server.close();
-    if(newTarget) {
-      newTarget.httpServer.server.close();
-    }
-    done();  
+    try { 
+      target.httpServer.server.close();
+      hub.httpServer.server.close();
+      proxy._server.close();
+      if(newTarget) {      
+        newTarget.httpServer.server.close();
+      }
+    } catch(err) {};
+    done();
   });
    
   it('will properly route peering connections', function(done) {
