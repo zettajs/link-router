@@ -3,6 +3,7 @@ var RouterClient = require('./router_client');
 var ServiceRegistryClient = require('./service_registry_client');
 var VersionClient = require('./version_client');
 var StatsClient = require('stats-client');
+var MonitorService = require('./monitor/service');
 
 var port = process.env.PORT || 4001;
 
@@ -16,13 +17,13 @@ if (process.env.ETCD_PEER_HOSTS) {
 }
 
 var serviceRegistryClient = new ServiceRegistryClient(opts);
-
 var routerClient = new RouterClient(opts);
-
 var versionClient = new VersionClient(opts);
-
 var statsdHost = process.env.COREOS_PRIVATE_IPV4 || 'localhost';
 var statsClient = new StatsClient(statsdHost + ':8125', {  routerHost: process.env.COREOS_PRIVATE_IPV4 });
+var targetMonitor = new MonitorService(serviceRegistryClient, { 
+  disabled: (process.env.DISABLE_TARGET_MONITOR) ? true : false
+});
 
 var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient);
 proxy.listen(port, function() {
