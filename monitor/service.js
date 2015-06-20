@@ -7,7 +7,8 @@ var Defaults = {
   Timeout: 10000,
   HealthyTreshold: 2,
   UnhealthyThreshold: 5,
-  MaxParrell: 5
+  MaxParrell: 5,
+  AssumeHealthy: true
 };
 
 var MonitorService = module.exports = function(serviceRegistryClient, opts) {
@@ -55,13 +56,19 @@ MonitorService.prototype.stop = function() {
 
 MonitorService.prototype.status = function(targetUrl) {
   if (this.disabled) {
-    return 'UP';
+    return true;
   }
 
   if (!this.state.hasOwnProperty(targetUrl)) {
-    return 'UNDETERMINED';
+    return (!!this.AssumeHealthy);
   } else {
-    return this.state[targetUrl].status;
+    if (this.state[targetUrl].status === 'UP') {
+      return true;
+    } else if (this.state[targetUrl].status === 'DOWN') {
+      return false;
+    } else {
+      return (!!this.AssumeHealthy);
+    }
   }
 };
 

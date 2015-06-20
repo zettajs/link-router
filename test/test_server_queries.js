@@ -12,6 +12,7 @@ var MockEtcd = require('./mocks/mock_etcd');
 var VersionClient = require('../version_client');
 var ServiceRegistryClient = require('../service_registry_client');
 var RouterClient = require('../router_client');
+var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
 
 function getBody(fn) {
@@ -70,7 +71,8 @@ describe('Queries', function() {
     
     function startProxy() {
       var statsClient = new StatsClient('localhost:8125');
-      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient); 
+      var monitor = new TargetMonitor(serviceRegistryClient, { disabled: true });
+      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, monitor);
       proxy.listen(0, function(err) {
         if(err) {
           return done(err);

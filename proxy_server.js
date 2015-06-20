@@ -25,7 +25,7 @@ var targetMonitor = new MonitorService(serviceRegistryClient, {
   disabled: (process.env.DISABLE_TARGET_MONITOR) ? true : false
 });
 
-var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient);
+var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, targetMonitor);
 proxy.listen(port, function() {
   console.log('proxy listening on http://localhost:' + port);
 });

@@ -54,7 +54,7 @@ describe('Target Monitor', function() {
       var target = { url: 'http://localhost:1', version: "1" };
       var monitor = new MonitorService(serviceRegistryClient);
       monitor._updateHost(target, function() {
-        assert.equal(monitor.status(target.url), 'DOWN')
+        assert.equal(monitor.status(target.url), false)
         done();
       });
     });

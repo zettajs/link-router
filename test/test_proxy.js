@@ -6,6 +6,7 @@ var VersionClient = require('../version_client');
 var ServiceRegistryClient = require('../service_registry_client');
 var RouterClient = require('../router_client');
 var StatsClient = require('stats-client');
+var TargetMonitor = require('../monitor/service');
 
 function getBody(fn) {
   return function(res) {
@@ -38,7 +39,8 @@ describe('Proxy', function() {
     var serviceRegistryClient = new ServiceRegistryClient({ client: etcd });
     var routerClient = new RouterClient({ client: etcd });
     var statsClient = new StatsClient('localhost:8125');
-    proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient);
+    var monitor = new TargetMonitor(serviceRegistryClient, { disabled: true });
+    proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, monitor);
     proxy.listen(0);
     done();
   });

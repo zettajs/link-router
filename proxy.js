@@ -23,7 +23,8 @@ function parseSubscription(hash) {
   };
 }
 
-var Proxy = module.exports = function(serviceRegistryClient, routerClient, versionClient, statsClient) {
+var Proxy = module.exports = function(serviceRegistryClient, routerClient, versionClient, statsClient, targetMonitor) {
+
   EventEmitter.call(this);
   var self = this;
   this._serviceRegistryClient = serviceRegistryClient;
@@ -37,6 +38,7 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._subscriptions = {};
   this._servers = {};
   this._peerSockets = [];
+  this._targetMonitor = targetMonitor;
   this._targetAllocation = new TargetAllocation(this);
 
   this._setup();
@@ -103,11 +105,11 @@ Proxy.prototype._setup = function() {
 
   self._serviceRegistryClient.on('change', function(results) {
     self._processServerList(results);
-    self.emit('services-update', self._servers);
+    self.emit('services-update');
   });
 
   this._loadServers(function() {
-    self.emit('services-update', self._servers);
+    self.emit('services-update');
   });
 
 
@@ -588,7 +590,10 @@ Proxy.prototype.activeTargets = function(tenantId) {
   }
   
   return this._servers[tenantId].filter(function(server) {
-    return server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0;
+    if (server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0) {
+      // Only return online servers
+      return self._targetMonitor.status(server.url);
+    }
   });
 };
 
@@ -602,7 +607,7 @@ Proxy.prototype.targets = function(tenantId) {
   }
 
   return this._servers[tenantId].filter(function(server) {
-    return server.version === self._currentVersion;
+    return server.version === self._currentVersion && self._targetMonitor.status(server.url);
   });
 };
 
