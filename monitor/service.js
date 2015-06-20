@@ -34,9 +34,9 @@ var MonitorService = module.exports = function(serviceRegistryClient, opts) {
   }
 
   this.state = {}; // { <targetUrl>: TargetState }
-
+  this.disabled = (opts.disabled === true);
   // If disabled don't do anything
-  if (opts.disabled === true) {
+  if (this.disabled) {
     return;
   } else {
     this.start();
@@ -54,6 +54,10 @@ MonitorService.prototype.stop = function() {
 };
 
 MonitorService.prototype.status = function(targetUrl) {
+  if (this.disabled) {
+    return 'UP';
+  }
+
   if (!this.state.hasOwnProperty(targetUrl)) {
     return 'UNDETERMINED';
   } else {
@@ -66,33 +70,56 @@ MonitorService.prototype._run = function() {
   // gather hosts
   // foreach host check and update state
 
-  this.getherHosts(function(err, hosts) {
+  this.gatherHosts(function(err, hosts) {
     if (err) {
       self.log.error('Monitor: Failed to gather targets. ' + err);
       return;
     }
-    
+
+    // check state for hosts that are not in etcd any more
+    Object.keys(self.state).forEach(function(targetUrl) {
+      var found = hosts.some(function(target) {
+        return (target.url === targetUrl);
+      });
+
+      if (found) {
+        return;
+      }
+      
+      // leave in state until it's marked as DOWN
+      if (self.status(targetUrl) === 'UP') {
+        // if host is still up mark it as a failure until till it's offline then remove it.
+        self.state[targetUrl].fail();
+      } else {
+        delete self.state[targetUrl];
+      }
+    });
+
     async.eachLimit(hosts, self.MaxParrell, self._updateHost.bind(self), function(err) {});
   });
 };
 
 // check and update host state
 MonitorService.prototype._updateHost = function(target, callback) {
+  var self = this;
+
   if (!this.state.hasOwnProperty(target.url)) {
     this.state[target.url] = new TargetState(this.HealthyThreshold, this.UnHealthyThreshold);
   }
 
   var state = this.state[target.url];
-
   var opts = {
     Timeout: this.Timeout
   };
+
   targetCheck(opts, target, function(result, err) {
     if (result) {
       state.success();
     } else {
       state.fail();
+      self.log.error('Monitor Checkking target ' + target.url + ' FAILED new status ' + self.status(target.url));
     }
+
     callback();
   });
 };

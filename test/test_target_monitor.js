@@ -1,8 +1,10 @@
 var assert = require('assert');
+var http = require('http');
 var MockEtcd = require('./mocks/mock_etcd');
 var ServiceRegistryClient = require('../service_registry_client');
 var MonitorService = require('../monitor/service');
 var TargetState = require('../monitor/target_state');
+var targetCheck = require('../monitor/target_check');
 
 describe('Target Monitor', function() {
   var etcd = null;
@@ -50,13 +52,76 @@ describe('Target Monitor', function() {
 
     it('_updateTarget should set state', function(done) {
       var target = { url: 'http://localhost:1', version: "1" };
-      var monitor = new MonitorService(serviceRegistryClient, { disabled: true });
+      var monitor = new MonitorService(serviceRegistryClient);
       monitor._updateHost(target, function() {
         assert.equal(monitor.status(target.url), 'DOWN')
         done();
       });
     });
 
+  });
+
+  describe('Target Check', function() {
+    it('should return true for working target', function(done) {
+      var server = http.createServer(function(req, res) {
+        res.statusCode = 200;
+        res.end();
+      });
+
+      server.listen(0, function(err) {
+        if (err) return done(err);
+
+        var target = { url: 'http://localhost:' + server.address().port };
+        targetCheck({ Timeout: 5000 }, target, function(result) {
+          assert.equal(result, true);
+          done();
+        });
+      });
+    })
+    it('should return false for unresolved host', function(done) {
+      var target = { url: 'http://nohost.apigee.net' };
+      targetCheck({ Timeout: 5000 }, target, function(result, err) {
+        assert.equal(result, false);
+        done();
+      });
+    })
+    it('should return false for timeout', function(done) {
+      var server = http.createServer(function(req, res) {
+      });
+
+      server.listen(0, function(err) {
+        if (err) return done(err);
+
+        var target = { url: 'http://localhost:' + server.address().port };
+        targetCheck({ Timeout: 200 }, target, function(result) {
+          assert.equal(result, false);
+          done();
+        });
+      });
+    })
+    it('should return false for connection refused', function(done) {
+      var target = { url: 'http://localhost:1' };
+      targetCheck({ Timeout: 5000 }, target, function(result, err) {
+        assert.equal(result, false);
+        done();
+      });
+    })
+    it('should return false for non 200 status code', function(done) {
+      var server = http.createServer(function(req, res) {
+        res.statusCode = 500;
+        res.end();
+      });
+
+      server.listen(0, function(err) {
+        if (err) return done(err);
+
+        var target = { url: 'http://localhost:' + server.address().port };
+        targetCheck({ Timeout: 200 }, target, function(result) {
+          assert.equal(result, false);
+          done();
+        });
+      });
+    })
   });
 
   describe('Target State', function() {
