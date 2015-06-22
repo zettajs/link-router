@@ -5,6 +5,7 @@ var EventEmitter = require('events').EventEmitter;
 var WsQueryHandler = require('./query_ws_handler.js');
 var HttpQueryHandler = require('./query_http_handler.js');
 var TargetAllocation = require('./target_allocation');
+var RouterStateHandler = require('./proxy_state_handler');
 var parseUri = require('./parse_uri');
 var joinUri = require('./join_uri');
 var getBody = require('./get_body');
@@ -50,6 +51,7 @@ Proxy.prototype._setup = function() {
 
   var wsQueryHandler = new WsQueryHandler(this);
   var httpQueryHandler = new HttpQueryHandler(this);
+  var routerStateHandler= new RouterStateHandler(this);
 
   this._server.on('upgrade', function(request, socket) {
     socket.allowHalfOpen = false;
@@ -70,6 +72,8 @@ Proxy.prototype._setup = function() {
       } else {
         self._serveRoot(request, response);
       }
+    } else if (parsed.pathname === '/state') {
+      routerStateHandler.request(request, response);
     } else {
       self._proxyRequest(request, response);
     }
