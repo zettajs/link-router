@@ -29,6 +29,7 @@ Handler.prototype.request = function(request, response, parsed) {
       ]
     };
 
+    entity.properties.url = k;
     Object.keys(self.proxy._targetMonitor.state[targetUrl]).forEach(function(k) {
       entity.properties[k] = self.proxy._targetMonitor.state[targetUrl][k];
     });
