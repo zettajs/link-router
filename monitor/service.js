@@ -5,7 +5,7 @@ var targetCheck = require('./target_check');
 var Defaults = {
   Interval: 30000,
   Timeout: 10000,
-  HealthyTreshold: 2,
+  HealthyThreshold: 2,
   UnhealthyThreshold: 5,
   MaxParrell: 5,
   AssumeHealthy: true
