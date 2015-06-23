@@ -7,7 +7,7 @@ var Defaults = {
   Timeout: 10000,
   HealthyThreshold: 2,
   UnhealthyThreshold: 5,
-  MaxParrell: 5,
+  MaxParallel: 5,
   AssumeHealthy: true
 };
 
@@ -102,7 +102,7 @@ MonitorService.prototype._run = function() {
       }
     });
 
-    async.eachLimit(hosts, self.MaxParrell, self._updateHost.bind(self), function(err) {});
+    async.eachLimit(hosts, self.MaxParallel, self._updateHost.bind(self), function(err) {});
   });
 };
 
