@@ -8,7 +8,7 @@ var Defaults = {
   HealthyThreshold: 2,
   UnhealthyThreshold: 5,
   MaxParallel: 5,
-  AssumeHealthy: true
+  AssumeHealthy: false
 };
 
 var MonitorService = module.exports = function(serviceRegistryClient, opts) {
