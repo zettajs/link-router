@@ -32,7 +32,7 @@ ServiceRegistry.prototype.findAll = function(cb) {
   var query = 'select type, url, created from servers';
 
   var self = this;
-  this._client.get(this._etcDirectory, function(err, results) {
+  this._client.get(this._etcDirectory, { consistent: true }, function(err, results) {
     if (err) {
       cb(err);
       return;
@@ -49,7 +49,7 @@ ServiceRegistry.prototype.findAll = function(cb) {
 ServiceRegistry.prototype.find = function(type, cb) {
 
   var self = this;
-  this._client.get(this._etcDirectory, function(err, results) {
+  this._client.get(this._etcDirectory, { consistent: true }, function(err, results) {
     if (err) {
       cb(err);
       return;

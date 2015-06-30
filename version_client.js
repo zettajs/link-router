@@ -27,7 +27,7 @@ var VersionClient = module.exports = function(options) {
 util.inherits(VersionClient, EventEmitter);
 
 VersionClient.prototype.get = function(cb) {
-  this._client.get(this._etcdDirectory, function(err, results) {
+  this._client.get(this._etcdDirectory, { consistent: true }, function(err, results) {
     if(err) {
       cb(err);
       return;
