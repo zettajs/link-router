@@ -35,7 +35,7 @@ RouterClient.prototype.findAll = function(tenantId, cb) {
   }
 
   var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
-  this._client.get(dir, { recursive: true }, function(err, results) {
+  this._client.get(dir, { recursive: true, consistent: true }, function(err, results) {
     if (err) {
       cb(err);
       return;
@@ -97,7 +97,7 @@ RouterClient.prototype.get = function(tenantId, targetName, cb) {
   }
 
   var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
-  this._client.get(dir + '/' + targetName, function(err, results) {
+  this._client.get(dir + '/' + targetName, { consistent: true }, function(err, results) {
     if (err) {
       cb(err);
       return;
