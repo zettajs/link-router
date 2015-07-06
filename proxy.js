@@ -39,6 +39,8 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._peerSockets = [];
   this._targetAllocation = new TargetAllocation(this);
 
+  this.peerActivityTimeout = 60000;
+
   this._setup();
 };
 util.inherits(Proxy, EventEmitter);
@@ -206,7 +208,7 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
   self._statsClient.increment('http.req.peer', { tenant: tenantId });
 
   this._routerClient.get(tenantId, targetName, function(err, peer) {
-    if (err && err.error.errorCode !== 100) {
+    if (err && (!err.error || err.error.errorCode !== 100) ) {
       socket.end('HTTP/1.1 500 Server Error\r\n\r\n\r\n');
       self._statsClient.increment('http.req.peer.status.5xx', { tenant: tenantId });
       return;
@@ -252,6 +254,14 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
                         socket: socket
                       };
 
+        var cleanup = function() {
+          clearInterval(timer);          
+          var idx = self._peerSockets.indexOf(peerObj);
+          if (idx >= 0) {
+            self._peerSockets.splice(idx, 1);
+          }
+          self._routerClient.remove(tenantId, targetName, function(err) {}); 
+        };
 
         self._statsClient.increment('http.req.peer.status.1xx', { tenant: tenantId });
 
@@ -260,21 +270,19 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
           return header + ': ' + targetResponse.headers[header];
         });
 
-        socket.on('error', function(err) {
+        upgradeSocket.on('error', function(err) {
           console.error('Target Socket Error:', tenantId, targetName, err);
+          cleanup();
         });
+        upgradeSocket.on('timeout', function() {
+          console.error('Target Socket Timeout:', tenantId, targetName);
+          upgradeSocket.destroy();
+          socket.end();
+        });
+        upgradeSocket.setTimeout(self.peerActivityTimeout);
 
         socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
         upgradeSocket.pipe(socket).pipe(upgradeSocket);
-
-        function cleanup() {
-          clearInterval(timer);          
-          var idx = self._peerSockets.indexOf(peerObj);
-          if (idx >= 0) {
-            self._peerSockets.splice(idx, 1);
-          }
-          self._routerClient.remove(tenantId, targetName, function(err) {}); 
-        }
 
         socket.on('close', cleanup);
         upgradeSocket.on('close', cleanup);
