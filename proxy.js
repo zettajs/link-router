@@ -5,6 +5,7 @@ var EventEmitter = require('events').EventEmitter;
 var WsQueryHandler = require('./query_ws_handler.js');
 var HttpQueryHandler = require('./query_http_handler.js');
 var TargetAllocation = require('./target_allocation');
+var RouterStateHandler = require('./proxy_state_handler');
 var parseUri = require('./parse_uri');
 var joinUri = require('./join_uri');
 var getBody = require('./get_body');
@@ -23,7 +24,8 @@ function parseSubscription(hash) {
   };
 }
 
-var Proxy = module.exports = function(serviceRegistryClient, routerClient, versionClient, statsClient) {
+var Proxy = module.exports = function(serviceRegistryClient, routerClient, versionClient, statsClient, targetMonitor) {
+
   EventEmitter.call(this);
   var self = this;
   this._serviceRegistryClient = serviceRegistryClient;
@@ -37,6 +39,7 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._subscriptions = {};
   this._servers = {};
   this._peerSockets = [];
+  this._targetMonitor = targetMonitor;
   this._targetAllocation = new TargetAllocation(this);
 
   this.peerActivityTimeout = 60000;
@@ -50,6 +53,7 @@ Proxy.prototype._setup = function() {
 
   var wsQueryHandler = new WsQueryHandler(this);
   var httpQueryHandler = new HttpQueryHandler(this);
+  var routerStateHandler= new RouterStateHandler(this);
 
   this._server.on('upgrade', function(request, socket) {
     socket.allowHalfOpen = false;
@@ -70,6 +74,8 @@ Proxy.prototype._setup = function() {
       } else {
         self._serveRoot(request, response);
       }
+    } else if (parsed.pathname === '/state') {
+      routerStateHandler.request(request, response);
     } else {
       self._proxyRequest(request, response);
     }
@@ -105,11 +111,11 @@ Proxy.prototype._setup = function() {
 
   self._serviceRegistryClient.on('change', function(results) {
     self._processServerList(results);
-    self.emit('services-update', self._servers);
+    self.emit('services-update');
   });
 
   this._loadServers(function() {
-    self.emit('services-update', self._servers);
+    self.emit('services-update');
   });
 
 
@@ -596,7 +602,10 @@ Proxy.prototype.activeTargets = function(tenantId) {
   }
   
   return this._servers[tenantId].filter(function(server) {
-    return server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0;
+    if (server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0) {
+      // Only return online servers
+      return self._targetMonitor.status(server.url);
+    }
   });
 };
 
@@ -610,7 +619,7 @@ Proxy.prototype.targets = function(tenantId) {
   }
 
   return this._servers[tenantId].filter(function(server) {
-    return server.version === self._currentVersion;
+    return server.version === self._currentVersion && self._targetMonitor.status(server.url);
   });
 };
 

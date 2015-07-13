@@ -29,7 +29,7 @@ TargetAllocation.prototype.lookup = function(tenantId, callback) {
 TargetAllocation.prototype._lookup = function(tenantId, maxTargets, callback) {
   var self = this;
   var servers = self.proxy.targets(tenantId);
-
+  
   if (!this.serverIndexes.hasOwnProperty(tenantId)) {
     this.serverIndexes[tenantId] = 0;
   }
@@ -66,7 +66,10 @@ TargetAllocation.prototype.allocate = function(tenantId, callback) {
     }
 
     var allocated = results.filter(function(server) {
-      return server.tenantId === tenantId && server.version === self.proxy._currentVersion
+      if (server.tenantId === tenantId && server.version === self.proxy._currentVersion) {
+        // filter by online targets
+        return self.proxy._targetMonitor.status(server.url);
+      }
     });
     
     if (allocated.length >= self.maxTargets) {
