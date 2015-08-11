@@ -13,6 +13,7 @@ var getTenantId = require('./get_tenant_id');
 var confirmWs = require('./confirm_ws');
 var statusCode = require('./status_code');
 var sirenResponse = require('./siren_response');
+var Receiver = require('ws').Receiver;
 
 function parseSubscription(hash) {
   var arr = hash.split(':');
@@ -56,6 +57,20 @@ Proxy.prototype._setup = function() {
   var routerStateHandler= new RouterStateHandler(this);
 
   this._server.on('upgrade', function(request, socket) {
+
+    var receiver = new Receiver();
+    socket.on('data', function(buf) {
+      receiver.add(buf);
+    });
+
+    receiver.onclose = function(code, data, flags) {
+      socket.end();
+    }
+
+    socket.once('close', function() {
+      receiver.cleanup();
+    });
+
     socket.allowHalfOpen = false;
     if (/^\/peers\//.test(request.url)) {
       self._proxyPeerConnection(request, socket);

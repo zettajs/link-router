@@ -3,3 +3,4 @@ node_modules
 .registry
 default.etcd/
 npm-debug.log
+.DS_Store
