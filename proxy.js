@@ -489,6 +489,9 @@ Proxy.prototype._proxyRequest = function(request, response) {
   if (match) {
     targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
   } else {
+    self._statsClient.increment('http.req.proxy.status.4xx', { tenant: tenantId });
+    response.statusCode = 404;
+    response.end();
     return;
   }
   
