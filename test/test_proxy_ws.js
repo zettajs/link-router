@@ -4,6 +4,7 @@ var zetta = require('zetta');
 var zrx = require('zrx');
 var Photocell = require('zetta-photocell-mock-driver');
 var StatsClient = require('stats-client');
+var WebSocket = require('ws');
 
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
@@ -96,6 +97,26 @@ describe('Proxy Websockets', function() {
         done();
       });
   })
+
+  it('will properly send close ACK when ws closes', function(done) {
+    var c = zrx()
+      .load(proxyUrl)
+      .peer('hub.1')
+      .device(function(d) { return d.type === 'photocell'; })
+      .stream('intensity')
+      .subscribe(function(data) {
+        c.dispose();
+        var wsUrl = proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?topic=' + data.topic;
+        var ws = new WebSocket(wsUrl);
+        ws.on('open', function open() {
+          ws.close();
+        });
+        ws.on('close', function(data, flags) {
+          done();
+        });
+      });  
+  })
+
 
   it('ws should not disconnect after etcd router updates', function(done) {
     var count = 0;
