@@ -13,7 +13,7 @@ var getTenantId = require('./get_tenant_id');
 var confirmWs = require('./confirm_ws');
 var statusCode = require('./status_code');
 var sirenResponse = require('./siren_response');
-var Receiver = require('ws').Receiver;
+var ws = require('ws');
 
 function parseSubscription(hash) {
   var arr = hash.split(':');
@@ -58,14 +58,21 @@ Proxy.prototype._setup = function() {
 
   this._server.on('upgrade', function(request, socket) {
 
-    var receiver = new Receiver();
+    var receiver = new ws.Receiver();
     socket.on('data', function(buf) {
       receiver.add(buf);
     });
 
+    // request from client to close websocket
     receiver.onclose = function(code, data, flags) {
       socket.end();
-    }
+    };
+
+    // handle ping requests
+    receiver.onping = function(code, data, flags) {
+      var sender = new ws.Sender(socket);
+      sender.pong();
+    };
 
     socket.once('close', function() {
       receiver.cleanup();
