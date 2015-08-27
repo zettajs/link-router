@@ -117,6 +117,26 @@ describe('Proxy Websockets', function() {
       });  
   })
 
+  it('will respond to ping requests', function(done) {
+    var c = zrx()
+      .load(proxyUrl)
+      .peer('hub.1')
+      .device(function(d) { return d.type === 'photocell'; })
+      .stream('intensity')
+      .subscribe(function(data) {
+        c.dispose();
+
+        var wsUrl = proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?topic=' + data.topic;
+        var ws = new WebSocket(wsUrl);
+        ws.on('open', function open() {
+          ws.ping();
+          ws.on('pong', function() {
+            done();
+          })
+        });
+      });  
+  })
+
 
   it('ws should not disconnect after etcd router updates', function(done) {
     var count = 0;
