@@ -69,9 +69,9 @@ Proxy.prototype._setup = function() {
     };
 
     // handle ping requests
-    receiver.onping = function(code, data, flags) {
+    receiver.onping = function(data, flags) {
       var sender = new ws.Sender(socket);
-      sender.pong();
+      sender.pong(data, { binary: flags.binary === true }, true);
     };
 
     socket.once('close', function() {

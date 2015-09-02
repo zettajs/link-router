@@ -129,8 +129,9 @@ describe('Proxy Websockets', function() {
         var wsUrl = proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?topic=' + data.topic;
         var ws = new WebSocket(wsUrl);
         ws.on('open', function open() {
-          ws.ping();
-          ws.on('pong', function() {
+          ws.ping('Application Data');
+          ws.on('pong', function(data, flags) {
+            assert.equal(data, 'Application Data');
             done();
           })
         });
