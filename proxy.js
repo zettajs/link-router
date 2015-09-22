@@ -105,7 +105,6 @@ Proxy.prototype._setup = function() {
     } else if (/^\/peer-management/.test(request.url)) {
       peerManagementHandler.routeHttp(request, response, parsed);
     } else {
-      console.log('proxy')
       self._proxyRequest(request, response);
     }
   });

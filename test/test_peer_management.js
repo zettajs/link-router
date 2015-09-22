@@ -1,5 +1,6 @@
 var assert = require('assert');
 var url = require('url');
+var http = require('http');
 var request = require('supertest');
 var zetta = require('zetta');
 var Led = require('zetta-led-mock-driver');
@@ -45,6 +46,10 @@ describe('Peer Management API', function() {
     var versionClient = new VersionClient({ client: etcd });
     var serviceRegistryClient = new ServiceRegistryClient({ client: etcd });
     var routerClient = new RouterClient({ client: etcd });
+
+    // clear existing hubs
+    hubs = [];
+    targets = [];
 
     // start targets
     var targetsStarted = 0;
@@ -93,7 +98,7 @@ describe('Peer Management API', function() {
           hub.name('hub.' + i);
           hub.link(proxyUrl);
           hub.use(Led);
-
+          
           hub.listen(0, function(err) {
             if (err) {
               return done(err);
@@ -145,6 +150,83 @@ describe('Peer Management API', function() {
         .expect(getBody(function(res, body) {
         }))
         .end(done);
+    });
+
+
+    it('DELETE /peer-management/hub.0 will disconnect peer', function(done) {
+      var delLink = null;
+
+      request(proxy._server)
+        .get('/peer-management/hub.0')
+        .expect(200)
+        .expect(getBody(function(res, body) {
+          delLink = body.actions.filter(function(a) { return a.name === 'disconnect'; })[0].href;
+        }))
+        .end(function(err) {
+          if (err) done(err);
+          hubs[0].pubsub.subscribe('_peer/disconnect', function(topic, data) {
+            if (data.peer.url.indexOf('hub.0') > -1) {
+              done();
+            }
+          });
+
+          var parsed = url.parse(delLink);
+          var opts = { method: 'DELETE',
+                       path: parsed.path,
+                       hostname: parsed.hostname,
+                       port: parsed.port
+                     };
+
+          http.request(opts, function(res) {
+            assert.equal(res.statusCode, 200);
+          }).end();
+        });
+
+    });
+
+
+    it('PUT /peer-management/hub.0 will update peer for reconnect', function(done) {
+      var delLink = null;
+
+      request(proxy._server)
+        .get('/peer-management/hub.0')
+        .expect(200)
+        .expect(getBody(function(res, body) {
+          delLink = body.actions.filter(function(a) { return a.name === 'disconnect'; })[0].href;
+        }))
+        .end(function(err) {
+          if (err) done(err);
+
+          var connectedAgain = false;
+          hubs[0].runtime.pubsub.subscribe('_peer/disconnect', function(topic, data) {
+            hubs[0].pubsub.subscribe('_peer/connect', function(topic, data) {
+              // sometimes called twice because of 409 conflict it gets when trying to immediately reconnect
+              // before etcd is updated.
+              if (!connectedAgain) {
+                connectedAgain = true;
+                done();
+              }
+            });
+          });
+
+          var body = 'url=' + encodeURIComponent(proxyUrl);
+          var parsed = url.parse(delLink);
+          var opts = { method: 'PUT',
+                       path: parsed.path,
+                       hostname: parsed.hostname,
+                       port: parsed.port,
+                       headers: {
+                         'Content-Type': 'application/x-www-form-urlencoded',
+                         'Content-Length': body.length
+                       }
+                     };
+
+          http.request(opts, function(res) {
+            assert.equal(res.statusCode, 200);
+          }).end(body);
+
+        });
+
     });
 
 
