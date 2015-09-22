@@ -244,7 +244,10 @@ PeerManagement.prototype.serveRoot = function(request, response, parsed) {
 
     includes.forEach(function(ret) {
       if (Array.isArray(ret.json.entities)) {
-        body.entities = body.entities.concat(ret.json.entities);
+        var filtered = ret.json.entities.filter(function(entity) {
+          return entity.properties.status === 'connected';
+        });
+        body.entities = body.entities.concat(filtered);
       }
     });
     

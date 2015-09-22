@@ -118,7 +118,12 @@ describe('Peer Management API', function() {
       })
     }
 
-  });  
+  });
+
+  afterEach(function(done) {
+    proxy._server.close();  
+    done();
+  });
 
   describe('HTTP API', function() {    
 
@@ -235,7 +240,9 @@ describe('Peer Management API', function() {
     it('should receive disconnect message', function(done) {
       var ws = new WebSocket(proxyUrl + '/peer-management');
       ws.on('open', function() {
-        hubs[0]._peerClients[0].close();
+        setTimeout(function() {
+          hubs[0]._peerClients[0].close();
+        }, 200);
       });
       ws.on('message', function(msg) {
         var json = JSON.parse(msg);
