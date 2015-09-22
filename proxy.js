@@ -1,6 +1,7 @@
 var http = require('http');
 var url = require('url');
 var util = require('util');
+var path = require('path');
 var EventEmitter = require('events').EventEmitter;
 var WsQueryHandler = require('./query_ws_handler.js');
 var HttpQueryHandler = require('./query_http_handler.js');
@@ -570,6 +571,10 @@ Proxy.prototype._serveRoot = function(request, response) {
       {
         rel: ['self'],
         href: parseUri(request)
+      },
+      {
+        rel: 'http://rels.zettajs.io/peer-management',
+        href: joinUri(request, '/peer-management')
       }
     ]
   };
