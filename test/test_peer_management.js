@@ -229,7 +229,32 @@ describe('Peer Management API', function() {
 
     });
 
-
   })
 
+  describe('WS API', function() {
+    it('should receive disconnect message', function(done) {
+      var ws = new WebSocket(proxyUrl + '/peer-management');
+      ws.on('open', function() {
+        hubs[0]._peerClients[0].close();
+      });
+      ws.on('message', function(msg) {
+        var json = JSON.parse(msg);
+        if (json.topic === '_peer/disconnect') {
+          assert.equal(json.data.id, 'hub.0');
+          done();
+        }
+      });
+    })
+
+    it('should disconnect if not the right url', function(done) {
+      var ws = new WebSocket(proxyUrl + '/peer-management/12');
+      ws.on('close', function(code) {
+        assert.equal(code, 1001);
+        done();
+      });
+    })
+
+
+  })
+  
 });
