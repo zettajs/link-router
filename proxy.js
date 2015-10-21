@@ -582,7 +582,7 @@ Proxy.prototype._serveRoot = function(request, response) {
       results.forEach(function(peer) {
         body.links.push({
           title: peer.name,
-          rel: ['http://rels.zettajs.io/peer'],
+          rel: [Rels.peer, Rels.server],
           href: joinUri(request, '/servers/' + peer.name)
         });
       });

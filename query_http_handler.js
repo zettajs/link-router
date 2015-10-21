@@ -7,6 +7,7 @@ var getBody = require('./get_body');
 var getTenantId = require('./get_tenant_id');
 var statusCode = require('./status_code');
 var sirenResponse = require('./siren_response');
+var Rels = require('zetta-rels');
 
 var Handler = module.exports = function(proxy) {
   this.proxy = proxy;
@@ -194,7 +195,7 @@ Handler.prototype._buildQueryResult = function(request) {
     entities: [],
     links: [
       { rel: ['self'], href: selfLink },
-      { rel: ['http://rels.zettajs.io/query'], href: wsLink }
+      { rel: [Rels.query], href: wsLink }
     ]
   };
 };
