@@ -197,7 +197,7 @@ describe('Proxy Websockets', function() {
           assert.equal(Object.keys(proxy._cache).length, 0);
           assert.equal(Object.keys(proxy._subscriptions).length, 0);
           done();
-        }, 5)
+        }, 15)
       });
   });
 

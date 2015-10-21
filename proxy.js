@@ -1,9 +1,11 @@
 var http = require('http');
 var url = require('url');
 var util = require('util');
+var path = require('path');
 var EventEmitter = require('events').EventEmitter;
 var WsQueryHandler = require('./query_ws_handler.js');
 var HttpQueryHandler = require('./query_http_handler.js');
+var PeerManagementHandler = require('./peer_management_handler');
 var TargetAllocation = require('./target_allocation');
 var RouterStateHandler = require('./proxy_state_handler');
 var parseUri = require('./parse_uri');
@@ -55,6 +57,7 @@ Proxy.prototype._setup = function() {
   var wsQueryHandler = new WsQueryHandler(this);
   var httpQueryHandler = new HttpQueryHandler(this);
   var routerStateHandler= new RouterStateHandler(this);
+  var peerManagementHandler = new PeerManagementHandler(this);
 
   this._server.on('upgrade', function(request, socket) {
 
@@ -83,6 +86,8 @@ Proxy.prototype._setup = function() {
       self._proxyPeerConnection(request, socket);
     } else if (/^\/events\?/.test(request.url)) {
       wsQueryHandler.wsQuery(request, socket);
+    } else if (/^\/peer-management/.test(request.url)) {
+      peerManagementHandler.routeWs(request, socket);
     } else {
       self._proxyEventSubscription(request, socket);
     }
@@ -98,6 +103,8 @@ Proxy.prototype._setup = function() {
       }
     } else if (parsed.pathname === '/state') {
       routerStateHandler.request(request, response);
+    } else if (/^\/peer-management/.test(request.url)) {
+      peerManagementHandler.routeHttp(request, response, parsed);
     } else {
       self._proxyRequest(request, response);
     }
@@ -564,6 +571,10 @@ Proxy.prototype._serveRoot = function(request, response) {
       {
         rel: ['self'],
         href: parseUri(request)
+      },
+      {
+        rel: 'http://rels.zettajs.io/peer-management',
+        href: joinUri(request, '/peer-management')
       }
     ]
   };
