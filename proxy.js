@@ -9,6 +9,7 @@ var HttpQueryHandler = require('./query_http_handler.js');
 var PeerManagementHandler = require('./peer_management_handler');
 var TargetAllocation = require('./target_allocation');
 var RouterStateHandler = require('./proxy_state_handler');
+var WsEventStreamHandler = require('./event_stream_ws_handler');
 var parseUri = require('./parse_uri');
 var joinUri = require('./join_uri');
 var getBody = require('./get_body');
@@ -59,6 +60,7 @@ Proxy.prototype._setup = function() {
   var httpQueryHandler = new HttpQueryHandler(this);
   var routerStateHandler= new RouterStateHandler(this);
   var peerManagementHandler = new PeerManagementHandler(this);
+  var wsEventStreamHandler = new WsEventStreamHandler(this);
 
   this._server.on('upgrade', function(request, socket) {
 
@@ -84,13 +86,15 @@ Proxy.prototype._setup = function() {
 
     socket.allowHalfOpen = false;
     if (/^\/peers\//.test(request.url)) {
-      self._proxyPeerConnection(request, socket);
+      self._proxyPeerConnection(request, socket, receiver);
     } else if (/^\/events\?/.test(request.url)) {
-      wsQueryHandler.wsQuery(request, socket);
+      wsQueryHandler.wsQuery(request, socket, receiver);
+    } else if (request.url === '/events') {
+      wsEventStreamHandler.connection(request, socket, receiver);
     } else if (/^\/peer-management/.test(request.url)) {
-      peerManagementHandler.routeWs(request, socket);
+      peerManagementHandler.routeWs(request, socket, receiver);
     } else {
-      self._proxyEventSubscription(request, socket);
+      self._proxyEventSubscription(request, socket, receiver);
     }
   });
 

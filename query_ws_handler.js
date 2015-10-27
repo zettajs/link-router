@@ -85,7 +85,7 @@ Handler.prototype.wsQuery = function(request, socket) {
   self.proxy.on('services-update', handleNewTargets);
   cache.finished = function() {
     self.proxy.removeListener('services-update', handleNewTargets);
-  };
+ };
   
   servers.forEach(function(server) {
     self._subscribeToTarget(cache, server);
