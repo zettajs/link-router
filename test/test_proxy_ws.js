@@ -186,18 +186,22 @@ describe('Proxy Websockets', function() {
   });
 
   it('it should disconnect ws if peer disconnects', function(done) {
+    var once = false;
     var c = zrx()
       .load(proxyUrl)
       .peer('hub.1')
       .device(function(d) { return d.type === 'photocell'; })
       .stream('intensity')
       .subscribe(function() {
-        proxy._routerClient.emit('change', []);
-        setTimeout(function() {
-          assert.equal(Object.keys(proxy._cache).length, 0);
-          assert.equal(Object.keys(proxy._subscriptions).length, 0);
-          done();
-        }, 15)
+        if (!once) {
+          proxy._routerClient.emit('change', []);
+          setTimeout(function() {
+            assert.equal(Object.keys(proxy._cache).length, 0);
+            assert.equal(Object.keys(proxy._subscriptions).length, 0);
+            done();
+          }, 15)
+          once = true;
+        }
       });
   });
 
