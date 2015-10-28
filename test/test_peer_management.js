@@ -236,7 +236,7 @@ describe('Peer Management API', function() {
   })
 
   describe('WS API', function() {
-    it.skip('should receive disconnect message', function(done) {
+    it('should receive disconnect message', function(done) {
       var ws = new WebSocket(proxyUrl + '/peer-management');
       ws.on('open', function() {
         setTimeout(function() {
