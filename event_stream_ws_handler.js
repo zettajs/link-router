@@ -278,7 +278,7 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
         var data = {
           type: 'unsubscribe-ack',
           subscriptionId: obj.linkSubscription.subscriptionId,
-          timestamp: new Date().time()  
+          timestamp: new Date().getTime()  
         };
         cache.wsSender.send(JSON.stringify(data));
         Object.keys(obj.targetSubscriptions).forEach(function(targetUrl) {
