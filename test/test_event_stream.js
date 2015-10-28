@@ -126,7 +126,7 @@ describe('Event Streams', function() {
 
   });  
 
-  describe.only('Websocket API', function() {
+  describe('Websocket API', function() {
 
     var baseUrl = '/events';
 
@@ -185,8 +185,8 @@ describe('Event Streams', function() {
             subscriptionId = json.subscriptionId;
 
             setTimeout(function() {
-              devices[0].call('change');
-            }, 50);
+              devices[0].call('turn-on');
+            }, 100);
           } else {
             assert.equal(json.type, 'event');
             assert(json.timestamp);

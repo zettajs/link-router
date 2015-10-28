@@ -116,6 +116,20 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
     cache.subscribe(subscription);
 
     // subscribe to targets
+    Object.keys(cache.targets).forEach(function(targetUrl) {
+      var socket = cache.targets[targetUrl];  
+      var obj = {
+        topic: subscription.topic,
+        type: 'subscribe' 
+      };
+
+      if(subscription.limit) {
+        obj.limit = subscription.limit;  
+      }
+      if(socket) {
+        socket.send(JSON.stringify(obj));
+      }
+    });
 
     var msg = {
       type: 'subscribe-ack',
@@ -155,7 +169,20 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
 
 
     // unsubscribe from targets
+    Object.keys(subscription.targetSubscriptions).forEach(function(targetUrl) {
+      var socket = cache.targets[targetUrl];
 
+      if(!socket) {
+        return;
+      }
+
+      var data = {
+        type: 'unsubscribe',
+        subscriptionId: subscription.targetSubscriptions[targetUrl]  
+      };
+      socket.send(JSON.stringify(data));  
+    });
+    cache.unsubscribe(subscription);
     cache.wsSender.send(JSON.stringify(msg));
   });
 
@@ -195,7 +222,16 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
 
     // send current subscriptions
     cache.subscriptions.forEach(function(subscription) {
-      console.log(subscription)
+      var obj = {
+        topic: subscription.linkSubscription.topic.hash(),
+        type: 'subscribe'  
+      };
+
+      if(subscription.limit) {
+        obj.limit = subscription.limit;
+      }
+
+      wsSocket.send(JSON.stringify(obj));
     });
   });
 
@@ -208,7 +244,64 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
     cache.clientSocket.end();
   });
 
-  wsSocket.on('message', function(data) {});
+  wsSocket.on('message', function(data, flags) {
+
+    if(flags.binary){
+      data = JSON.parse(data.toString());
+    } else {
+      data = JSON.parse(data); 
+    }
+
+    if(data.type == 'subscribe-ack') {
+      var obj = cache.subscriptions.filter(function(sub) {
+        return sub.linkSubscription.topic.hash() == data.topic;  
+      })[0];  
+      
+      if(obj) {
+        obj.targetSubscriptions[target.url] = data.subscriptionId;   
+      } 
+    } else if(data.type == 'event') {
+      var obj = cache.subscriptions.filter(function(sub) {
+        return sub.targetSubscriptions[target.url] && sub.targetSubscriptions[target.url] == data.subscriptionId;  
+      })[0];  
+
+      if(obj) {
+        data.subscriptionId = obj.linkSubscription.subscriptionId;  
+      }
+      
+      if(!obj.linkSubscription.limit || obj.currentCount < obj.linkSubscription.limit) {
+        cache.wsSender.send(JSON.stringify(data));
+        obj.currentCount++;
+      } 
+      
+      if(obj.linkSubscription.limit && obj.currentCount === obj.linkSubscription.limit) {
+        var data = {
+          type: 'unsubscribe-ack',
+          subscriptionId: obj.linkSubscription.subscriptionId,
+          timestamp: new Date().time()  
+        };
+        cache.wsSender.send(JSON.stringify(data));
+        Object.keys(obj.targetSubscriptions).forEach(function(targetUrl) {
+          var socket = cache.targets[targetUrl];
+
+          if(!socket) {
+            return;
+          }
+
+          var data = {
+            type: 'unsubscribe',
+            subscriptionId: obj.targetSubscriptions[targetUrl]  
+          };
+          socket.send(JSON.stringify(data));  
+        });
+        cache.unsubscribe(obj);
+
+        
+      }
+
+    }
+
+  });
 };
 
 Handler.prototype._getCacheObj = function(tenantId, request, socket) {
@@ -236,9 +329,14 @@ Handler.prototype._getCacheObj = function(tenantId, request, socket) {
       subscriptionIndex: 0,
       subscriptions: [], // { linkSubscription: subscription, targetSu }
       subscribe: function(subscription) {
-        obj.subscriptions.push({ linkSubscription: subscription, targetSubscriptions: {} });
+        obj.subscriptions.push({ linkSubscription: subscription, currentCount: 0, targetSubscriptions: {} });
       },
-      unsubscribe: function(subscription) {},
+      unsubscribe: function(subscription) {
+        var idx = obj.subscriptions.indexOf(subscription);  
+        if(idx >= 0) {
+          obj.subscriptions.splice(idx, 1);  
+        }
+      },
       remove: function() {
         var idx = self._cache[tenantId].indexOf(obj);
         if (idx >= 0) {
