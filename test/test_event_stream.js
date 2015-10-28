@@ -14,6 +14,7 @@ var ServiceRegistryClient = require('../service_registry_client');
 var RouterClient = require('../router_client');
 var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
+var TestDriver = require('./mocks/example_driver');
 
 function getBody(fn) {
   return function(res) {
@@ -98,6 +99,8 @@ describe('Event Streams', function() {
           hub.name(hubName);
           hub.link(proxyUrl);
           hub.use(Led);
+          hub.use(Led);
+          hub.use(TestDriver);
 
           hub.listen(0, function(err) {
             if (err) {
@@ -200,8 +203,517 @@ describe('Event Streams', function() {
       ws.on('error', done);
     });
 
-    
-    
-  })
+    it('multiple clients specific topic subscription only receives messages with that topic', function(done) {
+      var topic = validTopics[0];
+      
+      var connected = 0;
+      var recv = 0;
+      var ws1 = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      ws1.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws1.send(JSON.stringify(msg));
+        var subscriptionId = null;
+        ws1.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            connected++;
+            subscriptionId = json.subscriptionId;
+            if (connected === 2) {
+              setTimeout(function() {
+                devices[0].call('turn-on');
+              }, 50);
+            }
+          } else {
+            assert.equal(json.topic, topic);
+            assert.equal(json.subscriptionId, subscriptionId);
+            recv++;
+            if (recv === 2) {
+              done();
+            }
+          }
+        });
+      });
+      ws1.on('error', done);
 
+      var ws2 = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      ws2.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws2.send(JSON.stringify(msg));
+        var subscriptionId = null;
+        ws2.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            subscriptionId = json.subscriptionId;
+            connected++;
+            if (connected === 2) {
+              setTimeout(function() {
+                devices[0].call('turn-on');
+              }, 50);
+            }
+          } else {
+            assert.equal(json.topic, topic);
+            assert.equal(json.subscriptionId, subscriptionId);
+            recv++;
+            if (recv === 2) {
+              done();
+            }
+          }
+        });
+      });
+      ws2.on('error', done);
+    });   
+    
+    it('wildcard server topic subscription only receives messages with that topic', function(done) {
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var topic = validTopics[0];
+      topic = topic.replace('hub.0', '*');
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert.equal(json.topic, topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+
+            setTimeout(function() {
+              devices[0].call('turn-on');
+            }, 50);
+          } else {
+            assert.equal(json.type, 'event');
+            assert(json.timestamp);
+            assert.equal(json.topic, validTopics[0]);
+            assert.equal(json.subscriptionId, subscriptionId);
+            assert(json.data);
+            done();
+          }
+        });
+      });
+      ws.on('error', done);
+    });  
+
+    it('wildcard server topic subscription receives messages from both hubs', function(done) {
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var topic = '*/led/*/state';
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws.send(JSON.stringify(msg));
+        var recv = 0;
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert.equal(json.topic, topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+
+            setTimeout(function() {
+              devices[0].call('turn-on');
+              devices[3].call('turn-on');
+            }, 50);
+          } else {
+            recv++;
+            assert.equal(json.type, 'event');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert.equal(json.subscriptionId, subscriptionId);
+            assert(json.data);
+            if (recv === 2) {
+              done();
+            }
+          }
+        });
+      });
+      ws.on('error', done);
+    });
+
+    it('wildcard topic for single peer receives all messages for all topics', function(done) {
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var count = 0;
+      var topic = 'hub.0/led/*/state';
+      var lastTopic = null;
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert.equal(json.topic, topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+
+            setTimeout(function() {
+              devices[0].call('turn-on');
+              devices[1].call('turn-on');
+            }, 50);
+          } else {
+            assert.equal(json.type, 'event');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert.notEqual(json.topic, lastTopic);
+            lastTopic = json.topic;
+            assert.equal(json.subscriptionId, subscriptionId);
+            assert(json.data);
+            count++;
+            if(count === 2) {
+              done();
+            }
+          }
+        });
+      });
+      ws.on('error', done);  
+    });
+
+    it('topic that doesnt exist still opens stream', function(done) {
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var topic = 'blah/foo/1/blah';
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          assert.equal(json.type, 'subscribe-ack');
+          assert(json.timestamp);
+          assert.equal(json.topic, topic);
+          assert(json.subscriptionId);
+          done();
+        });
+      });
+      ws.on('error', done);
+    });
+
+    it('wildcard and specific topic will each publish a message on a subscription', function(done) {
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var count = 0;
+      var ackCount = 0;
+      var topicOne = validTopics[0];
+      var topicTwo = 'hub.0/led/*/state';
+      ws.on('open', function() {
+        var msgOne = { type: 'subscribe', topic: topicOne };
+        var msgTwo = { type: 'subscribe', topic: topicTwo };
+        ws.send(JSON.stringify(msgOne));
+        ws.send(JSON.stringify(msgTwo));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+            ackCount++;
+            setTimeout(function() {
+              for(var i=0; i<11; i++) {
+                devices[0].call((i % 2 === 0) ? 'turn-on' : 'turn-off');
+              }
+            }, 50);
+          } else {
+            assert.equal(json.type, 'event');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId);
+            count++;
+            if(count === 2) {
+              assert.equal(ackCount, 2);
+              done();
+            }
+          }
+        });
+      });
+      ws.on('error', done);     
+    });
+
+    it('adding limit to subscription should limit number of messages received', function(done){
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var count = 0;
+      var topic = validTopics[0];
+      var data = null;
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic, limit: 10 };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+
+            setTimeout(function() {
+              for(var i=0; i<11; i++) {
+                devices[0].call((i % 2 === 0) ? 'turn-on' : 'turn-off');
+              }
+            }, 50);
+          } else if (json.type !== 'unsubscribe-ack') {
+            assert.equal(json.type, 'event');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId, subscriptionId);
+            assert(json.data);
+
+            count++;
+            if(count === 10) {
+              setTimeout(function() {
+                assert.equal(count, 10);
+                done();
+              }, 200)
+            }
+          }
+        });
+      });
+      ws.on('error', done);  
+    });
+    
+    it('when limit is reached a unsubscribe-ack should be received', function(done){
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var count = 0;
+      var topic = validTopics[0];
+      var data = null;
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic, limit: 10 };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+            setTimeout(function() {
+              for(var i=0; i<11; i++) {
+                devices[0].call((i % 2 === 0) ? 'turn-on' : 'turn-off');
+              }
+            }, 50);
+          } else if(json.type === 'event') {
+            assert.equal(json.type, 'event');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId, subscriptionId);
+            assert(json.data);
+            count++;
+          } else if(json.type === 'unsubscribe-ack') {
+            assert.equal(json.type, 'unsubscribe-ack');
+            assert(json.timestamp);
+            assert.equal(json.subscriptionId, subscriptionId);
+            assert.equal(count, 10);
+            done();
+          }
+        });
+      });
+      ws.on('error', done);  
+    });
+
+    it('query field selector should only return properties in selection', function(done){
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var count = 0;
+      var topic = 'hub.0/testdriver/' + devices[2].id + '/bar?select data where data >= 1';
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+            setTimeout(function() {
+              devices[2].incrementStreamValue();
+            }, 50);
+          } else if(json.type === 'event') {
+            assert.equal(json.type, 'event');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId, subscriptionId);
+            assert(json.data);
+            done();
+          }
+        });
+      });
+      ws.on('error', done);  
+    });
+
+    it('query field selector * should all properties in selection', function(done){
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var count = 0;
+      var topic = 'hub.0/testdriver/' + devices[2].id + '/fooobject?select * where data.val >= 2';
+      var data = { foo: 'bar', val: 2 };
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+            setTimeout(function() {
+              devices[2].publishStreamObject(data);
+            }, 50);
+          } else if(json.type === 'event') {
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId, subscriptionId);
+            assert(json.data);
+            assert.equal(json.data.val, 2);
+            assert.equal(json.data.foo, 'bar');
+            done();
+          }
+        });
+      });
+      ws.on('error', done);  
+    });
+
+    it('query field selector should return only selected properties', function(done){
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var count = 0;
+      var topic = 'hub.0/testdriver/' + devices[2].id + '/fooobject?select data.val';
+      var data = { foo: 'bar', val: 2 };
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+            setTimeout(function() {
+              devices[2].publishStreamObject(data);
+            }, 50);
+          } else if(json.type === 'event') {
+            assert(json.timestamp);
+            assert(json.topic);
+            assert(json.subscriptionId, subscriptionId);
+            assert(json.data);
+            assert.equal(json.data.val, 2);
+            assert.equal(json.data.foo, undefined);
+            done();
+          }
+        });
+      });
+      ws.on('error', done);  
+    });
+
+    describe('Protocol Errors', function() {
+
+      it('invalid stream query should result in a 400 error', function(done){
+        var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+        var subscriptionId = null;
+        var count = 0;
+        var topic = 'hub/testdriver/' + devices[0].id + '/fooobject?invalid stream query';
+        var data = { foo: 'bar', val: 2 };
+        ws.on('open', function() {
+          var msg = { type: 'subscribe', topic: topic };
+          ws.send(JSON.stringify(msg));
+          ws.on('message', function(buffer) {
+            var json = JSON.parse(buffer);
+            done();
+            assert(json.timestamp);
+            assert.equal(json.topic, topic);
+            assert.equal(json.code, 400);
+            assert(json.message);
+          });
+        });
+        ws.on('error', done);  
+      });
+
+      it('invalid subscribe should result in a 400 error', function(done){
+        var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+        var subscriptionId = null;
+        var count = 0;
+        ws.on('open', function() {
+          var msg = { type: 'subscribe' };
+          ws.send(JSON.stringify(msg));
+          ws.on('message', function(buffer) {
+            var json = JSON.parse(buffer);
+            done();
+            assert(json.timestamp);
+            assert.equal(json.code, 400);
+            assert(json.message);
+          });
+        });
+        ws.on('error', done);  
+      });
+
+      it('unsubscribing from an invalid subscriptionId should result in a 400 error', function(done){
+        var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+        var subscriptionId = null;
+        var count = 0;
+        ws.on('open', function() {
+          var msg = { type: 'unsubscribe', subscriptionId: 123 };
+          ws.send(JSON.stringify(msg));
+          ws.on('message', function(buffer) {
+            var json = JSON.parse(buffer);
+            done();
+            assert(json.timestamp);
+            assert.equal(json.code, 405);
+            assert(json.message);
+          });
+        });
+        ws.on('error', done);  
+      });
+
+      it('unsubscribing from a missing subscriptionId should result in a 400 error', function(done){
+        var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+        var subscriptionId = null;
+        var count = 0;
+        ws.on('open', function() {
+          var msg = { type: 'unsubscribe' };
+          ws.send(JSON.stringify(msg));
+          ws.on('message', function(buffer) {
+            var json = JSON.parse(buffer);
+            done();
+            assert(json.timestamp);
+            assert.equal(json.code, 400);
+            assert(json.message);
+          });
+        });
+        ws.on('error', done);  
+      });
+
+      it('on invalid message should result in a 400 error', function(done){
+        var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+        var subscriptionId = null;
+        var count = 0;
+        ws.on('open', function() {
+          var msg = { test: 123 };
+          ws.send(JSON.stringify(msg));
+          ws.on('message', function(buffer) {
+            var json = JSON.parse(buffer);
+            done();
+            assert(json.timestamp);
+            assert.equal(json.code, 400);
+            assert(json.message);
+          });
+        });
+        ws.on('error', done);  
+      });
+
+
+    })
+
+  });
 });
