@@ -3,12 +3,12 @@ var http = require('http');
 var async = require('async');
 var caql = require('caql');
 var ws = require('ws');
+var EventStreamsParser = require('zetta-events-stream-protocol').Parser;
+var StreamTopic = require('zetta-events-stream-protocol').StreamTopic;
+var JSCompiler = require('caql-js-compiler');
 var getBody = require('./get_body');
 var getTenantId = require('./get_tenant_id');
 var confirmWs = require('./confirm_ws');
-var EventStreamsParser = require('./zetta-tmp/event_streams_parser')
-var StreamTopic = require('./zetta-tmp/stream_topic');
-var JSCompiler = require('caql-js-compiler');
 
 var Handler = module.exports = function(proxy) {
   this.proxy = proxy;
