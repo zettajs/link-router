@@ -119,13 +119,14 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
     Object.keys(cache.targets).forEach(function(targetUrl) {
       var socket = cache.targets[targetUrl];  
       var obj = {
-        topic: subscription.topic,
+        topic: subscription.topic.hash(),
         type: 'subscribe' 
       };
 
       if(subscription.limit) {
         obj.limit = subscription.limit;  
       }
+
       if(socket) {
         socket.send(JSON.stringify(obj));
       }
