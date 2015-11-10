@@ -278,10 +278,12 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
         return sub.targetSubscriptions[target.url] && sub.targetSubscriptions[target.url] == data.subscriptionId;  
       })[0];  
 
-      if(obj) {
-        data.subscriptionId = obj.linkSubscription.subscriptionId;  
+      if (!obj) {
+        return;
       }
-      
+
+      data.subscriptionId = obj.linkSubscription.subscriptionId;  
+
       if(!obj.linkSubscription.limit || obj.currentCount < obj.linkSubscription.limit) {
         cache.wsSender.send(JSON.stringify(data));
         obj.currentCount++;
@@ -308,8 +310,6 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
           socket.send(JSON.stringify(data));  
         });
         cache.unsubscribe(obj);
-
-        
       }
 
     }
