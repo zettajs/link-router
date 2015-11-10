@@ -93,6 +93,18 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
       return;
     }
 
+    if (topic.pubsubIdentifier() === '') {
+      var msg = {
+        type: 'error',
+        code: 400,
+        timestamp: new Date().getTime(),
+        topic: msg.topic,
+        message: 'Topic must have server and specific topic. Specific topic missing.'
+      };
+      cache.wsSender.send(JSON.stringify(msg));
+      return;
+    }
+
     if(topic.streamQuery && !self._queryCache[topic.streamQuery]) {
       try {
         var compiler = new JSCompiler();
