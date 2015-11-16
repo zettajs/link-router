@@ -578,8 +578,12 @@ Proxy.prototype._serveRoot = function(request, response) {
         href: parseUri(request)
       },
       {
-        rel: 'http://rels.zettajs.io/peer-management',
+        rel: [ Rels.peerManagement ],
         href: joinUri(request, '/peer-management')
+      },
+      {
+        rel: [ Rels.events ],
+        href: joinUri(request, '/events')
       }
     ]
   };
