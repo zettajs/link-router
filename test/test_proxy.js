@@ -86,7 +86,7 @@ describe('Proxy', function() {
         .end(done);
     });
 
-    it.only('will have /peer-management link on root with proper rel', function(done) {
+    it('will have /peer-management link on root with proper rel', function(done) {
       request(proxy._server)
         .get('/')
         .expect(getBody(function(res, body) {
