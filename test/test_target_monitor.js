@@ -122,6 +122,19 @@ describe('Target Monitor', function() {
         });
       });
     })
+
+    it('should only fire cb once for a timeout', function(done) {
+      var target = { url: 'http://1.2.3.4' };
+      var called = 0;
+      targetCheck({ Timeout: 200 }, target, function(result) {
+        called++;
+      });
+
+      setTimeout(function() {
+        assert.equal(called, 1);
+        done();
+      }, 1000);
+    });
   });
 
   describe('Target State', function() {
