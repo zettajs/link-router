@@ -125,7 +125,7 @@ Proxy.prototype._setup = function() {
     }  
 
     self._currentVersion = versionObject.version;
-    self.emit('version-update', self._router);
+    self.emit('version-update', self._currentVersion);
   });
 
   self._routerClient.on('change', function(results) {
