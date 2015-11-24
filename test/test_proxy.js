@@ -166,12 +166,13 @@ describe('Proxy', function() {
       assert.equal(proxy._currentVersion, "2");
     });
 
-    it('will update the current routes from an etcd watcher', function() {
-      etcd.set('/router/zetta/default', '{"url":"http://example.com/", "tenantId": "default"}');
-      etcd.set('/router/zetta/', '{"url":"http://example.com/", "tenantId": "default"}');
+    it('will update the current routes from an etcd watcher', function(done) {
+      etcd.set('/router/zetta/default', '{"url":"http://example.com/", "name": "some-peer", "tenantId": "default"}');
+      proxy.once('router-update', function(routerCache) {
+        assert.equal(routerCache.get('default', 'some-peer'), 'http://example.com/');
+        done();
+      });
       etcd._trigger('/router/zetta', []);
-      var routerKeys = Object.keys(proxy._router);
-      assert.equal(routerKeys.length, 1);      
     });
 
     it('will update the current targets from an etcd watcher', function() {
