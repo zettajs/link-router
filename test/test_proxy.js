@@ -7,6 +7,7 @@ var ServiceRegistryClient = require('../service_registry_client');
 var RouterClient = require('../router_client');
 var StatsClient = require('stats-client');
 var TargetMonitor = require('../monitor/service');
+var Rels = require('zetta-rels');
 
 function getBody(fn) {
   return function(res) {
@@ -72,14 +73,40 @@ describe('Proxy', function() {
         .end(done);
     });
 
+    it('will have events link on root with proper rel', function(done) {
+      request(proxy._server)
+        .get('/')
+        .expect(getBody(function(res, body) {
+          var links = body.links.filter(function(link) {
+            return link.rel.indexOf(Rels.events) > -1;
+          });
+          
+          assert.equal(links.length, 1);
+        }))
+        .end(done);
+    });
+
+    it('will have /peer-management link on root with proper rel', function(done) {
+      request(proxy._server)
+        .get('/')
+        .expect(getBody(function(res, body) {
+          var links = body.links.filter(function(link) {
+            return link.rel.indexOf(Rels.peerManagement) > -1;
+          });
+          
+          assert.equal(links.length, 1);
+        }))
+        .end(done);
+    });
+
     it('will have servers within the router in the API response', function(done) {
       etcd.set('/router/zetta/default/foo', '{"url":"http://example.com/", "name": "foo", "tenantId": "default"}');
       etcd._trigger('/router/zetta/default', []);
       request(proxy._server)
         .get('/')
         .expect(getBody(function(res, body) {
-          assert.equal(body.links.length, 3);
-          var peerLink = body.links[2];
+          assert.equal(body.links.length, 4);
+          var peerLink = body.links[3];
           assert.equal(peerLink.title, "foo");
         }))
         .end(done);
@@ -108,7 +135,7 @@ describe('Proxy', function() {
         .get('/')
         .expect(getBody(function(res, body) {
           var selfLink = body.links[0];
-          assert.equal(body.links.length, 2);
+          assert.equal(body.links.length, 3);
           assert.notEqual(selfLink.rel.indexOf('self'), -1);
         }))
         .end(done);
