@@ -13,6 +13,7 @@
     "caql": "^0.2.0",
     "caql-js-compiler": "^0.5.0",
     "minimatch": "^3.0.0",
+    "lru-cache": "^2.7.1",
     "node-etcd": "^3.0.2",
     "rx": "^2.3.25",
     "stats-client": "^0.2.0",

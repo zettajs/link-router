@@ -17,6 +17,7 @@ var getTenantId = require('./get_tenant_id');
 var confirmWs = require('./confirm_ws');
 var statusCode = require('./status_code');
 var sirenResponse = require('./siren_response');
+var RouterCache = require('./router_cache');
 var ws = require('ws');
 
 function parseSubscription(hash) {
@@ -39,7 +40,7 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._statsClient = statsClient;
   this._currentVersion = null;
   this._server = http.createServer();
-  this._router = {};
+  this._routerCache = new RouterCache();
   this._cache = {};
   this._subscriptions = {};
   this._servers = {};
@@ -125,22 +126,19 @@ Proxy.prototype._setup = function() {
     }  
 
     self._currentVersion = versionObject.version;
-    self.emit('version-update', self._router);
+    self.emit('version-update', self._currentVersion);
   });
 
   self._routerClient.on('change', function(results) {
-    var tempRouter = {};
+    // Clear cache b/c we have full list of router from results
+    self._routerCache.reset();
+
     results.forEach(function(obj) {
-      if (!tempRouter.hasOwnProperty(obj.tenantId)) {
-        tempRouter[obj.tenantId] = {};
-      }
-
-      tempRouter[obj.tenantId][obj.name] = obj.url;
+      self._routerCache.set(obj.tenantId, obj.name, obj.url);
     });
-
-    self._router = tempRouter;
+    
     self._disconnectStaleWsClients();
-    self.emit('router-update', self._router);
+    self.emit('router-update', self._routerCache);
   });
 
   self._serviceRegistryClient.on('change', function(results) {
@@ -363,7 +361,8 @@ Proxy.prototype._disconnectStaleWsClients = function() {
   // make sure target exists in router and is the same as what is subscribed to
   Object.keys(this._cache).forEach(function(hash) {
     var obj = parseSubscription(hash);
-    if (!self._router[obj.tenantId] || !self._router[obj.tenantId][obj.targetName] || self._router[obj.tenantId][obj.targetName] !== obj.targetHost) {
+    var serverUrl = self._routerCache.get(obj.tenantId, obj.targetName);
+    if (serverUrl === undefined || serverUrl !== obj.targetHost) {
       // end subscription to zetta target, will close all clients
       self._cache[hash].end();
     }
@@ -386,114 +385,123 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     return;
   }
 
-  if (!this._router[tenantId] || !this._router[tenantId][targetName]) {
-    self._statsClient.increment('http.req.event.status.4xx', { tenant: tenantId });
-    var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
-    socket.end(responseLine);
-    return;
-  }
-
-  var urlHash = [tenantId, targetName, this._router[tenantId][targetName], request.url].map(encodeURIComponent).join(':');
-  if (!this._subscriptions.hasOwnProperty(urlHash)) {
-    this._subscriptions[urlHash] = [];
-  }
-
-  socket.on('error', function(err) {
-    console.error('Client Socket Error:', tenantId, targetName, err);
-  });
-
-  function removeSocketFromCache() {
-    var idx = self._subscriptions[urlHash].indexOf(socket);
-    if (idx >= 0) {
-      self._subscriptions[urlHash].splice(idx, 1);
+  this.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
+    if (err) {
+      self._statsClient.increment('http.req.event.status.5xx', { tenant: tenantId });
+      var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
+      socket.end(responseLine);
+      return;
     }
-    
-    if (self._subscriptions[urlHash].length === 0) {
-      if (self._cache[urlHash]) {
-        self._cache[urlHash].end();
+
+    if (!serverUrl) {
+      self._statsClient.increment('http.req.event.status.4xx', { tenant: tenantId });
+      var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
+      socket.end(responseLine);
+      return;
+    }
+
+    var urlHash = [tenantId, targetName, serverUrl, request.url].map(encodeURIComponent).join(':');
+    if (!self._subscriptions.hasOwnProperty(urlHash)) {
+      self._subscriptions[urlHash] = [];
+    }
+
+    socket.on('error', function(err) {
+      console.error('Client Socket Error:', tenantId, targetName, err);
+    });
+
+    function removeSocketFromCache() {
+      var idx = self._subscriptions[urlHash].indexOf(socket);
+      if (idx >= 0) {
+        self._subscriptions[urlHash].splice(idx, 1);
       }
-      delete self._subscriptions[urlHash];
-      delete self._cache[urlHash];
+      
+      if (self._subscriptions[urlHash].length === 0) {
+        if (self._cache[urlHash]) {
+          self._cache[urlHash].end();
+        }
+        delete self._subscriptions[urlHash];
+        delete self._cache[urlHash];
+      }
     }
-  }
 
-  var cleanup = function() {};
+    var cleanup = function() {};
 
-  socket.on('close', function() {
-    cleanup();
-  });
+    socket.on('close', function() {
+      cleanup();
+    });
 
-  if (this._cache.hasOwnProperty(urlHash)) {
-    confirmWs(request, socket);
-    this._subscriptions[urlHash].push(socket);
-    self._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
-    cleanup = function() {
-      removeSocketFromCache();
+    if (self._cache.hasOwnProperty(urlHash)) {
+      confirmWs(request, socket);
+      self._subscriptions[urlHash].push(socket);
+      self._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
+      cleanup = function() {
+        removeSocketFromCache();
+      };
+
+      return;
+    }
+
+    var server = url.parse(serverUrl);
+    var options = {
+      method: request.method,
+      headers: request.headers,
+      hostname: server.hostname,
+      port: server.port,
+      path: parsed.path
     };
 
-    return;
-  }
+    var target = http.request(options);
 
-  var server = url.parse(this._router[tenantId][targetName]);
-  var options = {
-    method: request.method,
-    headers: request.headers,
-    hostname: server.hostname,
-    port: server.port,
-    path: parsed.path
-  };
-
-  var target = http.request(options);
-
-  cleanup = function () {
-    target.abort();
-  };
-
-  target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
-    var code = targetResponse.statusCode;
-    var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
-    var headers = Object.keys(targetResponse.headers).map(function(header) {
-      return header + ': ' + targetResponse.headers[header];
-    });
-
-    self._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
-    socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
-
-    self._cache[urlHash] = upgradeSocket;
-    self._subscriptions[urlHash].push(socket);
-
-    cleanup = function() {
-      removeSocketFromCache();
+    cleanup = function () {
+      target.abort();
     };
 
-    upgradeSocket.on('data', function(data) {
-      if (self._subscriptions[urlHash]) {
-        self._subscriptions[urlHash].forEach(function(socket) {
-          socket.write(data);
-        });
-      }
+    target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
+      var code = targetResponse.statusCode;
+      var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
+      var headers = Object.keys(targetResponse.headers).map(function(header) {
+        return header + ': ' + targetResponse.headers[header];
+      });
+
+      self._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
+      socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
+
+      self._cache[urlHash] = upgradeSocket;
+      self._subscriptions[urlHash].push(socket);
+
+      cleanup = function() {
+        removeSocketFromCache();
+      };
+
+      upgradeSocket.on('data', function(data) {
+        if (self._subscriptions[urlHash]) {
+          self._subscriptions[urlHash].forEach(function(socket) {
+            socket.write(data);
+          });
+        }
+      });
+
+      upgradeSocket.on('close', function() {
+        delete self._cache[urlHash];
+        if (self._subscriptions[urlHash]) {
+          self._subscriptions[urlHash].forEach(function(socket) {
+            socket.end();
+          });
+        }
+      });
+
+      upgradeSocket.on('error', function(err) {
+        console.error('Target Ws Socket Error:', tenantId, targetName, err);
+      });
     });
 
-    upgradeSocket.on('close', function() {
-      delete self._cache[urlHash];
-      if (self._subscriptions[urlHash]) {
-        self._subscriptions[urlHash].forEach(function(socket) {
-          socket.end();
-        });
-      }
+    target.on('error', function() {
+      var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
+      socket.end(responseLine);
     });
 
-    upgradeSocket.on('error', function(err) {
-      console.error('Target Ws Socket Error:', tenantId, targetName, err);
-    });
+    request.pipe(target);
   });
-
-  target.on('error', function() {
-    var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
-    socket.end(responseLine);
-  });
-
-  request.pipe(target);
 };
 
 Proxy.prototype._proxyRequest = function(request, response) {
@@ -634,14 +642,14 @@ Proxy.prototype._serveRoot = function(request, response) {
 // peers currently connected.
 Proxy.prototype.activeTargets = function(tenantId) {
   var self = this;
-  
   var activeServers = [];
-  if (this._router.hasOwnProperty(tenantId)) {
-    Object.keys(self._router[tenantId]).forEach(function(peerName) {
-      activeServers.push(self._router[tenantId][peerName]);
-    });
-  }
-  
+
+
+  // Get all target servers from routerCache
+  this._routerCache.keys(tenantId).forEach(function(obj) {
+    activeServers.push(self._routerCache.get(obj.tenantId, obj.targetName));
+  });
+
   if (!this._servers.hasOwnProperty(tenantId)) {
     return activeServers;
   }
@@ -671,20 +679,17 @@ Proxy.prototype.targets = function(tenantId) {
 
 Proxy.prototype.lookupPeersTarget = function(tenantId, targetName, cb) {
   var self = this;
-  if (!this._router.hasOwnProperty(tenantId) || !this._router[tenantId].hasOwnProperty(targetName)) {
+  var serverUrl = this._routerCache.get(tenantId, targetName);
+  if (serverUrl === undefined) {
     this._routerClient.get(tenantId, targetName, function(err, serverUrl) {
       if (serverUrl) {
-        if (!self._router.hasOwnProperty(tenantId)) {
-          self._router[tenantId] = {};
-        }
-
-        self._router[tenantId][targetName] = serverUrl;
+        self._routerCache.set(tenantId, targetName, serverUrl);
         cb(null, serverUrl);
       } else {
         cb(new Error('No server found.'));
       }
     });
   } else {
-    cb(null, this._router[tenantId][targetName]);
+    cb(null, serverUrl);
   }
 }
