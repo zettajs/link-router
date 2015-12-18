@@ -65,37 +65,40 @@ Proxy.prototype._setup = function() {
 
   this._server.on('upgrade', function(request, socket) {
 
-    var receiver = new ws.Receiver();
-    socket.on('data', function(buf) {
-      receiver.add(buf);
-    });
-
-    // request from client to close websocket
-    receiver.onclose = function(code, data, flags) {
-      socket.end();
-    };
-
-    // handle ping requests
-    receiver.onping = function(data, flags) {
-      var sender = new ws.Sender(socket);
-      sender.pong(data, { binary: flags.binary === true }, true);
-    };
-
-    socket.once('close', function() {
-      receiver.cleanup();
-    });
-
     socket.allowHalfOpen = false;
+
     if (/^\/peers\//.test(request.url)) {
       self._proxyPeerConnection(request, socket, receiver);
-    } else if (/^\/events\?/.test(request.url)) {
-      wsQueryHandler.wsQuery(request, socket, receiver);
-    } else if (request.url === '/events') {
-      wsEventStreamHandler.connection(request, socket, receiver);
-    } else if (/^\/peer-management/.test(request.url)) {
-      peerManagementHandler.routeWs(request, socket, receiver);
     } else {
-      self._proxyEventSubscription(request, socket, receiver);
+      var receiver = new ws.Receiver();
+      socket.on('data', function(buf) {
+        receiver.add(buf);
+      });
+
+      // request from client to close websocket
+      receiver.onclose = function(code, data, flags) {
+        socket.end();
+      };
+
+      // handle ping requests
+      receiver.onping = function(data, flags) {
+        var sender = new ws.Sender(socket);
+        sender.pong(data, { binary: flags.binary === true }, true);
+      };
+
+      socket.once('close', function() {
+        receiver.cleanup();
+      });
+
+      if (/^\/events\?/.test(request.url)) {
+        wsQueryHandler.wsQuery(request, socket, receiver);
+      } else if (request.url === '/events') {
+        wsEventStreamHandler.connection(request, socket, receiver);
+      } else if (/^\/peer-management/.test(request.url)) {
+        peerManagementHandler.routeWs(request, socket, receiver);
+      } else {
+        self._proxyEventSubscription(request, socket, receiver);
+      }
     }
   });
 
