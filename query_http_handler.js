@@ -27,7 +27,7 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
   try {
     caql.parse(parsed.query.ql);
   } catch (err) {
-    self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
+    self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId, targetName: targetName });
     sirenResponse(response, 400, this._buildQueryError(request, err));
     return;
   }
@@ -36,7 +36,7 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
 
   this.proxy.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
     if (err) {
-      self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
+      self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId, targetName: targetName });
       sirenResponse(response, 200, body);
       return;
     }
@@ -53,9 +53,9 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
     var target = http.request(options);
     target.on('response', function(targetResponse) {
       response.statusCode = targetResponse.statusCode;
-      self.proxy._statsClient.increment('http.req.query.status.' + statusCode(response.statusCode), { tenant: tenantId });
+      self.proxy._statsClient.increment('http.req.query.status.' + statusCode(response.statusCode), { tenant: tenantId, targetName: targetName });
       var duration = new Date().getTime() - startTime;
-      self.proxy._statsClient.timing('http.req.query', duration, { tenant: tenantId });
+      self.proxy._statsClient.timing('http.req.query', duration, { tenant: tenantId, targetName: targetName });
       Object.keys(targetResponse.headers).forEach(function(header) {
         response.setHeader(header, targetResponse.headers[header]);
       });
@@ -63,7 +63,7 @@ Handler.prototype.serverQuery = function(request, response, parsed) {
     });
 
     target.on('error', function() {
-      self.proxy._statsClient.increment('http.req.query.status.5xx', { tenant: tenantId });
+      self.proxy._statsClient.increment('http.req.query.status.5xx', { tenant: tenantId, targetName: targetName });
       response.statusCode = 500;
       response.end();
     });
