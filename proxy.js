@@ -19,6 +19,9 @@ var statusCode = require('./status_code');
 var sirenResponse = require('./siren_response');
 var RouterCache = require('./router_cache');
 var ws = require('ws');
+var async = require('async');
+
+var CloudDeviceTargetName = 'cloud-devices';
 
 function parseSubscription(hash) {
   var arr = hash.split(':');
@@ -507,6 +510,130 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
   });
 };
 
+
+Proxy.prototype._proxyCloudDevice = function(request, response) {
+  var self = this;
+  var parsed = url.parse(request.url, true);
+  var tenantId = getTenantId(request);
+  var deviceId = null;
+
+  var clientAborted = false;
+  request.on('close', function() {
+    clientAborted = true;
+  });
+
+  var match = /^\/servers\/cloud-devices\/devices\/(.+)$/.exec(request.url);
+  if (match) {
+    deviceId = decodeURIComponent(/^\/servers\/cloud-devices\/devices\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
+  } else {
+
+    var body = {
+      class: ['server'],
+      properties: {
+        name: 'cloud-devices'
+      },
+      entities: [],
+      actions: [
+        {
+          name: 'query-devices',
+          method: 'GET',
+          href: parseUri(request),
+          type: 'application/x-www-form-urlencoded',
+          fields: [
+            {
+              name: 'ql',
+              type: 'text'
+            }
+          ]
+        }
+      ],
+      links: [
+        {
+          rel: ['self'],
+          href: parseUri(request)
+        },
+        {
+          rel: [ Rels.metadata ],
+          href: joinUri(request, '/meta')
+        },
+        {
+          rel: [ Rels.monitor ],
+          href: joinUri(request, '/events').replace(/^http/, 'ws') + '?topic=logs'
+        }
+      ]
+    };
+
+    // If root list all cloud devices
+    this._routerClient.findAll(tenantId, true, function(err, results) {
+      if (err && (!err.error || err.error.errorCode !== 100)) {
+        response.statusCode = 500;
+        response.end();
+        return;
+      }
+      
+      if (clientAborted) {
+        return;
+      }
+
+      results = results || [];
+
+      var targets = results.map(function(device) {
+        return device.url;
+      });
+
+      async.map(targets, function(targetUrl, next) {
+        var targetUrlParsed = url.parse(targetUrl);
+        var serverName = 'cloud-' + targetUrlParsed.port;
+        targetUrlParsed.path = '/servers/' + serverName;
+
+        var opts = {
+          method: 'GET',
+          headers: request.headers,
+          hostname: targetUrlParsed.hostname,
+          port: targetUrlParsed.port,
+          path: targetUrlParsed.path,
+        };
+        console.log(opts);
+        
+        var req = http.get(opts, function(res) {
+          getBody(res, function(err, body) {
+            if (err) {
+              return next(err);
+            }
+            try {
+              var json = JSON.parse(body);
+            } catch(err) {
+              return next(err);
+            }
+
+            json.entities = json.entities.map(function(entity) {
+              entity.links = entity.links.map(function(link) {
+                link.href = link.href.replace('/servers/' + serverName, '/servers/' + CloudDeviceTargetName);
+                return link;
+              });
+              return entity;
+            });
+
+            return next(null, json.entities);
+          });
+        });
+        req.once('error', next);
+      }, function(err, entityResults) {
+        if (err) {
+          response.statusCode = 500;
+          response.end();
+        }
+        
+        entityResults.forEach(function(entities) {
+          body.entities = body.entities.concat(entities);
+        });
+
+        sirenResponse(response, 200, body);
+      });
+    });
+  }
+};
+
 Proxy.prototype._proxyRequest = function(request, response) {
   var self = this;
   var parsed = url.parse(request.url, true);
@@ -523,6 +650,11 @@ Proxy.prototype._proxyRequest = function(request, response) {
     response.statusCode = 404;
     response.end();
     return;
+  }
+
+  // Handle cloud device
+  if (targetName === CloudDeviceTargetName) {
+    return this._proxyCloudDevice(request, response);
   }
   
   this.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
@@ -595,6 +727,10 @@ Proxy.prototype._serveRoot = function(request, response) {
       {
         rel: [ Rels.events ],
         href: joinUri(request, '/events')
+      },
+      {
+        rel: [ Rels.server ],
+        href: joinUri(request, '/servers/' + CloudDeviceTargetName)
       }
     ]
   };
