@@ -528,6 +528,52 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
   var match = /^\/servers\/cloud-devices\/devices\/(.+)$/.exec(request.url);
   if (match) {
     deviceId = decodeURIComponent(/^\/servers\/cloud-devices\/devices\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
+  
+    this.lookupPeersTarget(tenantId, deviceId, true, function(err, serverUrl) {
+      if (err) {
+        self._statsClient.increment('http.req.proxy.status.4xx', { tenant: tenantId });
+        response.statusCode = 404;
+        response.end();
+        return;
+      }
+
+      var parsedUrl = url.parse(serverUrl);
+      var serverName = 'cloud-' + parsedUrl.port;
+      var serverPath = '/servers/'+serverName;
+
+      var opts = {
+        method: request.method,
+        headers: request.headers,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port,
+        path: parsed.path
+      } 
+
+
+
+      var target = http.request(opts, function(targetResponse) {
+        response.statusCode = targetResponse.statusCode;
+
+        Object.keys(targetResponse.headers).forEach(function(header) {
+          response.setHeader(header, targetResponse.headers[header]);
+        });
+
+        targetResponse.pipe(response); 
+      });
+
+      // close target req if client is closed before target finishes
+      response.on('close', function() {
+        target.abort();
+      });
+
+      target.on('error', function() {
+        response.statusCode = 500;
+        response.end();
+      });
+
+      request.pipe(target);    
+    
+    });
   } else {
 
     var parsedUrlWithoutQuery = url.parse(parseUri(request), true);
@@ -622,21 +668,21 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
 
       async.map(targets, function(targetUrl, next) {
         var targetUrlParsed = url.parse(targetUrl);
-        var serverName = 'cloud-' + targetUrlParsed.port;
-        targetUrlParsed.pathname = '/servers/' + serverName;
-        targetUrlParsed.query = parsed.query;
-        targetUrlParsed = url.parse(url.format(targetUrlParsed));
-
+        
         var opts = {
           method: 'GET',
           headers: request.headers,
           hostname: targetUrlParsed.hostname,
           port: targetUrlParsed.port,
-          path: targetUrlParsed.path,
+          path: parsed.path,
         };
+
+        console.log(opts);
         
         var req = http.get(opts, function(res) {
+          console.log(res.statusCode);
           getBody(res, function(err, body) {
+            console.log(arguments);
             if (err) {
               return next(err);
             }
@@ -646,22 +692,15 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
               return next(err);
             }
 
-            json.entities = json.entities.map(function(entity) {
-              entity.links = entity.links.map(function(link) {
-                link.href = link.href.replace('/servers/' + serverName, '/servers/' + CloudDeviceTargetName);
-                return link;
-              });
-              return entity;
-            });
-
             return next(null, json.entities);
           });
         });
         req.once('error', next);
       }, function(err, entityResults) {
         if (err) {
+          console.log(err);
           response.statusCode = 500;
-          response.end();
+          return response.end();
         }
         
         entityResults.forEach(function(entities) {
@@ -856,11 +895,17 @@ Proxy.prototype.targets = function(tenantId) {
 };
 
 
-Proxy.prototype.lookupPeersTarget = function(tenantId, targetName, cb) {
+Proxy.prototype.lookupPeersTarget = function(tenantId, targetName, isCloudDevice, cb) {
   var self = this;
+
+  if (typeof isCloudDevice === 'function') {
+    cb = isCloudDevice;
+    isCloudDevice = false;
+  }
+
   var serverUrl = this._routerCache.get(tenantId, targetName);
   if (serverUrl === undefined) {
-    this._routerClient.get(tenantId, targetName, function(err, serverUrl) {
+    this._routerClient.get(tenantId, targetName, isCloudDevice, function(err, serverUrl) {
       if (serverUrl) {
         self._routerCache.set(tenantId, targetName, serverUrl);
         cb(null, serverUrl);

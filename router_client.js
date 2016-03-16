@@ -100,14 +100,24 @@ RouterClient.prototype.findAll = function(tenantId, isCloudDevice, cb) {
   });
 };
 
-RouterClient.prototype.get = function(tenantId, targetName, cb) {
+RouterClient.prototype.get = function(tenantId, targetName, isCloudDevice, cb) {
   if (typeof targetName === 'function') {
     cb = targetName;
     targetName = tenantId;
     tenantId = null;
   }
 
+
+  if (typeof isCloudDevice === 'function') {
+    cb = isCloudDevice;
+    isCloudDevice = false;
+  }
+
   var dir = tenantId ? this._etcDirectory + '/' + tenantId : this._etcDirectory;
+  if (isCloudDevice) {
+    dir = dir + '/' + CloudDeviceDir;
+  }
+
   this._client.get(dir + '/' + targetName, { consistent: true }, function(err, results) {
     if (err) {
       cb(err);
