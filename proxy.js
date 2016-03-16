@@ -513,7 +513,10 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
 
 Proxy.prototype._proxyCloudDevice = function(request, response) {
   var self = this;
-  var parsed = url.parse(request.url, true);
+
+  var uri = parseUri(request);
+  var parsed = url.parse(uri, true);
+  
   var tenantId = getTenantId(request);
   var deviceId = null;
 
@@ -527,6 +530,17 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
     deviceId = decodeURIComponent(/^\/servers\/cloud-devices\/devices\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
   } else {
 
+    var parsedUrlWithoutQuery = url.parse(parseUri(request), true);
+    delete parsedUrlWithoutQuery.search;
+    delete parsedUrlWithoutQuery.query;
+   
+    parsedUrlWithoutQuery.pathname = path.join(parsedUrlWithoutQuery.pathname, 'meta');
+    var metaUrl = url.format(parsedUrlWithoutQuery);
+    
+    parsedUrlWithoutQuery.query = { topic: 'logs' };
+    parsedUrlWithoutQuery.pathname = path.join(parsedUrlWithoutQuery.pathname, 'events');
+    var monitorUrl = url.format(parsedUrlWithoutQuery);
+    
     var body = {
       class: ['server'],
       properties: {
@@ -554,14 +568,39 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
         },
         {
           rel: [ Rels.metadata ],
-          href: joinUri(request, '/meta')
+          href: metaUrl
         },
         {
           rel: [ Rels.monitor ],
-          href: joinUri(request, '/events').replace(/^http/, 'ws') + '?topic=logs'
+          href: monitorUrl.replace(/^http/, 'ws')
         }
       ]
     };
+
+    if (parsed.query.ql) {
+      var opts = {
+        protocol: (parsed.protocol.indexOf('https') === 0) ? 'wss:' : 'ws:',
+        slashes: true,
+        hostname: parsed.hostname,
+        port: parsed.port,
+        auth: parsed.auth,
+        hash: parsed.hash,
+        pathname: path.join(parsed.pathname, '/events'),
+        query: {
+          topic: 'query/' + parsed.query.ql
+        }
+      };
+      
+      body.class.push('search-results');
+      body.properties.ql = parsed.query.ql;
+      body.links.push(
+        {
+          rel: [ Rels.query ],
+          href: url.format(opts)
+        }
+      );
+      
+    }
 
     // If root list all cloud devices
     this._routerClient.findAll(tenantId, true, function(err, results) {
@@ -584,7 +623,9 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
       async.map(targets, function(targetUrl, next) {
         var targetUrlParsed = url.parse(targetUrl);
         var serverName = 'cloud-' + targetUrlParsed.port;
-        targetUrlParsed.path = '/servers/' + serverName;
+        targetUrlParsed.pathname = '/servers/' + serverName;
+        targetUrlParsed.query = parsed.query;
+        targetUrlParsed = url.parse(url.format(targetUrlParsed));
 
         var opts = {
           method: 'GET',
@@ -593,7 +634,6 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
           port: targetUrlParsed.port,
           path: targetUrlParsed.path,
         };
-        console.log(opts);
         
         var req = http.get(opts, function(res) {
           getBody(res, function(err, body) {
