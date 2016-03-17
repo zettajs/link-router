@@ -20,6 +20,7 @@ var sirenResponse = require('./siren_response');
 var RouterCache = require('./router_cache');
 var ws = require('ws');
 var async = require('async');
+var StreamTopic = require('zetta-events-stream-protocol').StreamTopic;
 
 var CloudDeviceTargetName = 'cloud-devices';
 
@@ -350,8 +351,6 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
 
       request.pipe(target);
     });
-
-
   });
 };
 
@@ -380,6 +379,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
   var parsed = url.parse(request.url, true);
   var targetName;
   var tenantId = getTenantId(request);
+  var isCloudDevice = false;
 
   var match = /^\/servers\/(.+)$/.exec(request.url);
   if (match) {
@@ -391,9 +391,32 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     return;
   }
 
-  this.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
+  if(targetName === CloudDeviceTargetName) {
+    isCloudDevice = true; 
+    try {
+      var streamTopic = StreamTopic.parse(parsed.query.topic);
+    } catch(e) {
+      console.log('Parse error: ',e);
+      var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
+      return socket.end(responseLine);
+    }
+
+    if(streamTopic.isSpecial && streamTopic.pubsubIdentifier() == 'logs') {
+      //TODO: Enable scatter gather log streams
+    } else if(streamTopic.isSpecial || streamTopic.pubsubIdentifier() == '**') {
+      var responseLine = 'HTTP/1.1 400 Invalid Query\r\n\r\n\r\n';
+      return socket.end(responseLine);
+    } else {
+      var topicComponents = streamTopic.pubsubIdentifier().split('/'); 
+      targetName = topicComponents[0];
+    }
+  }
+
+  console.log('TargetName: ', targetName, ' isCloudDevice: ', isCloudDevice);
+  this.lookupPeersTarget(tenantId, targetName, isCloudDevice, function(err, serverUrl) {
     if (err) {
       self._statsClient.increment('http.req.event.status.5xx', { tenant: tenantId });
+      console.log('Lookup error: ', err);
       var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
       socket.end(responseLine);
       return;
@@ -677,12 +700,9 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
           path: parsed.path,
         };
 
-        console.log(opts);
         
         var req = http.get(opts, function(res) {
-          console.log(res.statusCode);
           getBody(res, function(err, body) {
-            console.log(arguments);
             if (err) {
               return next(err);
             }
@@ -698,7 +718,6 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
         req.once('error', next);
       }, function(err, entityResults) {
         if (err) {
-          console.log(err);
           response.statusCode = 500;
           return response.end();
         }
@@ -805,7 +824,7 @@ Proxy.prototype._serveRoot = function(request, response) {
       },
       {
         rel: [ Rels.events ],
-        href: joinUri(request, '/events')
+        href: joinUri(request, '/events').replace(/^http/, 'ws')
       },
       {
         rel: [ Rels.server ],
