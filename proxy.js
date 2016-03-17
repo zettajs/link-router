@@ -597,7 +597,133 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
       request.pipe(target);    
     
     });
-  } else {
+  } else if(/^\/servers\/cloud-devices\/meta/.exec(request.url)) {
+    this._routerClient.findAll(tenantId, false, function(err, results) {
+      if(err && (!err.error || err.error.errorCode !== 100)) {
+        response.statusCode = 500;
+        return response.end();
+      }
+
+      var targets = results.map(function(target) {
+        return target.url;
+      });
+
+      async.map(targets, function(targetUrl, next) {
+        var targetUrlParsed = url.parse(targetUrl);
+        var opts = {
+          method: 'GET',
+          headers: request.headers,
+          hostname: targetUrlParsed.hostname,
+          port: targetUrlParsed.port,
+          path: parsed.path
+        }
+        var req = http.get(opts, function(res) {
+          getBody(res, function(err, body) {
+            if(err) {
+              return next(err);
+            }
+            
+            try {
+              var json = JSON.parse(body);
+            } catch(e) {
+              return next(err);
+            }
+
+            return next(null, json);
+          });
+        });
+        req.once('error', next);
+      }, function(err, metaResults){
+        response.statusCode = 200;
+        var serverPath = '/servers/cloud-devices';
+        var serverUrlOpts = {
+          protocol: 'http://',
+          hostname: parsed.hostname,
+          port: parsed.port,
+          pathname: serverPath
+        };
+
+        var serverUrl = url.format(serverUrlOpts);
+
+        var metaMonitorOpts = {
+          protocol:'ws://',
+          hostname: parsed.hostname,
+          port: parsed.port,
+          pathname: serverPath + '/events',
+          query: {
+            topic: 'meta'
+          }
+        };
+
+
+        var metaMonitor = url.format(metaMonitorOpts);
+        var responseDoc = {
+          class: ['metadata'],
+          properties: {
+            name: 'cloud-devices'
+          },
+          entities: [],
+          links: [
+            {
+              rel: ['self'],
+              href: parseUri(request)
+            },  
+            {
+              rel: [Rels.server],
+              href: serverUrl
+            },
+            {
+              rel: [Rels.monitor],
+              href: metaMonitor
+            }
+          ]
+        }
+
+        metaResults.forEach(function(metaDoc) {
+          responseDoc.entities = responseDoc.entities.concat(metaDoc.entities);
+        });
+
+        return sirenResponse(response, 200, responseDoc);     
+      }); 
+
+    });
+  } else if(/^\/servers\/cloud-devices\/meta\/(.+)$/.exec(request.url)) {
+
+    this._routerClient.findAll(tenantId, false, function(err, results) {
+      if(err && (!err.error || err.error.errorCode !== 100)) {
+        response.statusCode = 500;
+        return response.end();
+      }
+
+      var targets = results.map(function(target) {
+        return target.url;
+      });
+      async.map(targets, function(targetUrl, next) {
+        var targetUrlParsed = url.parse(targetUrl);
+        var opts = {
+          method: 'GET',
+          headers: request.headers,
+          hostname: targetUrlParsed.hostname,
+          port: targetUrlParsed.port,
+          path: parsed.path
+        }
+        var req = http.get(opts, function(res) {
+          getBody(res, function(err, body) {
+            if(err) {
+              return next(err);
+            }
+
+            return next(null, body);
+          });
+        });
+        req.once('error', next);
+      }, function(err, metaResults){
+        response.statusCode = 200;
+        return response.end(metaResults[0]);     
+      }); 
+
+    });
+  }  else {
 
     var parsedUrlWithoutQuery = url.parse(parseUri(request), true);
     delete parsedUrlWithoutQuery.search;
