@@ -559,14 +559,14 @@ Proxy.prototype._proxyRequest = function(request, response) {
       });
 
       var duration = new Date().getTime() - startTime;
-      self._statsClient.timing('http.req.proxy', duration, { tenant: tenantId });
-      self._statsClient.increment('http.req.proxy.status.' + statusCode(response.statusCode), { tenant: tenantId });
+      self._statsClient.timing('http.req.proxy', duration, { tenant: tenantId, targetName: targetName });
+      self._statsClient.increment('http.req.proxy.status.' + statusCode(response.statusCode), { tenant: tenantId, targetName: targetName });
 
       targetResponse.pipe(response);
     });
 
     target.on('error', function() {
-      self._statsClient.increment('http.req.proxy.status.5xx', { tenant: tenantId });
+      self._statsClient.increment('http.req.proxy.status.5xx', { tenant: tenantId, targetName: targetName });
       response.statusCode = 500;
       response.end();
     });
