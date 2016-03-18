@@ -595,6 +595,9 @@ describe('Event Streams', function() {
             assert.deepEqual(json.data.input, []);
             assert(json.data.properties);
             assert(json.data.actions);
+            // Check to ensure hrefs are pointed to proxy not target
+            assert(json.data.actions[0].href.indexOf(proxyUrl) === 0);
+            
             done();
           }
         });
