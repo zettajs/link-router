@@ -594,7 +594,7 @@ Proxy.prototype._serveRoot = function(request, response) {
       },
       {
         rel: [ Rels.events ],
-        href: joinUri(request, '/events')
+        href: joinUri(request, '/events').replace(/^http/,'ws')
       }
     ]
   };
