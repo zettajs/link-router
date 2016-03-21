@@ -10,6 +10,7 @@ var PeerManagementHandler = require('./peer_management_handler');
 var TargetAllocation = require('./target_allocation');
 var RouterStateHandler = require('./proxy_state_handler');
 var WsEventStreamHandler = require('./event_stream_ws_handler');
+var CloudDeviceWsHandler = require('./cloud_device_ws_handler');
 var parseUri = require('./parse_uri');
 var joinUri = require('./join_uri');
 var getBody = require('./get_body');
@@ -66,6 +67,9 @@ Proxy.prototype._setup = function() {
   var routerStateHandler= new RouterStateHandler(this);
   var peerManagementHandler = new PeerManagementHandler(this);
   var wsEventStreamHandler = new WsEventStreamHandler(this);
+
+  // Handles /servers/cloud-device/events?topic="logs"
+  this._cloudDeviceWsHandler = new CloudDeviceWsHandler(this);
 
   this._server.on('upgrade', function(request, socket) {
 
@@ -402,7 +406,7 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     }
 
     if(streamTopic.isSpecial && streamTopic.pubsubIdentifier() == 'logs') {
-      //TODO: Enable scatter gather log streams
+      return this._cloudDeviceWsHandler.wsQuery(request, socket);
     } else if(streamTopic.isSpecial || streamTopic.pubsubIdentifier() == '**') {
       var responseLine = 'HTTP/1.1 400 Invalid Query\r\n\r\n\r\n';
       return socket.end(responseLine);
@@ -412,7 +416,6 @@ Proxy.prototype._proxyEventSubscription = function(request, socket) {
     }
   }
 
-  console.log('TargetName: ', targetName, ' isCloudDevice: ', isCloudDevice);
   this.lookupPeersTarget(tenantId, targetName, isCloudDevice, function(err, serverUrl) {
     if (err) {
       self._statsClient.increment('http.req.event.status.5xx', { tenant: tenantId });
@@ -550,6 +553,7 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
 
   var match = /^\/servers\/cloud-devices\/devices\/(.+)$/.exec(request.url);
   if (match) {
+    // Handle specific device /servers/cloud-devices/servers/<deviceId>
     deviceId = decodeURIComponent(/^\/servers\/cloud-devices\/devices\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
   
     this.lookupPeersTarget(tenantId, deviceId, true, function(err, serverUrl) {
@@ -598,6 +602,7 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
     
     });
   } else if(/^\/servers\/cloud-devices\/meta$/.exec(request.url)) {
+    // Handle cloud devices metadata root /servers/cloud-devices/meta
     this._routerClient.findAll(tenantId, false, function(err, results) {
       if(err && (!err.error || err.error.errorCode !== 100)) {
         response.statusCode = 500;
@@ -714,6 +719,7 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
 
     });
   } else if(/^\/servers\/cloud-devices\/meta\/(.+)$/.exec(request.url)) {
+    // Handle cloud devices metadata type /servers/cloud-devices/meta/<deviceType>
     this._routerClient.findAll(tenantId, false, function(err, results) {
       if(err && (!err.error || err.error.errorCode !== 100)) {
         response.statusCode = 500;
@@ -777,16 +783,18 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
       });
     });
   }  else {
-
+    // Handle cloud devices servers root /servers/cloud-devices
+    
     var parsedUrlWithoutQuery = url.parse(parseUri(request), true);
     delete parsedUrlWithoutQuery.search;
     delete parsedUrlWithoutQuery.query;
-   
-    parsedUrlWithoutQuery.pathname = path.join(parsedUrlWithoutQuery.pathname, 'meta');
+    var originalPathName = parsedUrlWithoutQuery.pathname;
+    
+    parsedUrlWithoutQuery.pathname = path.join(originalPathName, 'meta');
     var metaUrl = url.format(parsedUrlWithoutQuery);
     
     parsedUrlWithoutQuery.query = { topic: 'logs' };
-    parsedUrlWithoutQuery.pathname = path.join(parsedUrlWithoutQuery.pathname, 'events');
+    parsedUrlWithoutQuery.pathname = path.join(originalPathName, 'events');
     var monitorUrl = url.format(parsedUrlWithoutQuery);
     
     var body = {
