@@ -604,6 +604,10 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
         return response.end();
       }
 
+      if (!results) {
+        results = [];
+      }
+      
       var targets = results.map(function(target) {
         return target.url;
       });
