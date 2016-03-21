@@ -1,11 +1,15 @@
 module.exports = function(res, code, json) {
-  try {
-    var bodyText = JSON.stringify(json);
-  } catch(err) {
-    console.error('JSON.stringify:', err);
-    res.statusCode = 500;
-    res.end();
-    return;
+  if (typeof json === 'object' && !Buffer.isBuffer(json)) {
+    try {
+      var bodyText = JSON.stringify(json);
+    } catch(err) {
+      console.error('JSON.stringify:', err);
+      res.statusCode = 500;
+      res.end();
+      return;
+    }
+  } else {
+    var bodyText = json;
   }
 
   res.statusCode = code;

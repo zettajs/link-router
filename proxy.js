@@ -597,16 +597,14 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
       request.pipe(target);    
     
     });
-  } else if(/^\/servers\/cloud-devices\/meta/.exec(request.url)) {
+  } else if(/^\/servers\/cloud-devices\/meta$/.exec(request.url)) {
     this._routerClient.findAll(tenantId, false, function(err, results) {
       if(err && (!err.error || err.error.errorCode !== 100)) {
         response.statusCode = 500;
         return response.end();
       }
 
-      if (!results) {
-        results = [];
-      }
+      results = results || [];
       
       var targets = results.map(function(target) {
         return target.url;
@@ -622,6 +620,12 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
           path: parsed.path
         }
         var req = http.get(opts, function(res) {
+          if (res.statusCode !== 200) {
+            var err = new Error('Non-200 status code from target');
+            err.res = res;
+            return next(err);
+          }
+
           getBody(res, function(err, body) {
             if(err) {
               return next(err);
@@ -638,6 +642,24 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
         });
         req.once('error', next);
       }, function(err, metaResults){
+        if (err) {
+          if (!err.res) { 
+            response.statusCode = 500;
+            return response.end();
+          } else {
+            getBody(err.res, function(bodyerr, body) {
+              if (bodyerr) {
+                response.statusCode = 500;
+                return response.end();
+              }
+              response.statusCode = err.res.statusCode;
+              response.end(body);
+            });
+            return;
+          }
+        }
+
+        
         response.statusCode = 200;
         var serverPath = '/servers/cloud-devices';
         var serverUrlOpts = {
@@ -692,12 +714,13 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
 
     });
   } else if(/^\/servers\/cloud-devices\/meta\/(.+)$/.exec(request.url)) {
-
     this._routerClient.findAll(tenantId, false, function(err, results) {
       if(err && (!err.error || err.error.errorCode !== 100)) {
         response.statusCode = 500;
         return response.end();
       }
+
+      results = results || [];
 
       var targets = results.map(function(target) {
         return target.url;
@@ -712,6 +735,12 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
           path: parsed.path
         }
         var req = http.get(opts, function(res) {
+          if (res.statusCode !== 200) {
+            var err = new Error('Non-200 status code from target');
+            err.res = res;
+            return next(err);
+          }
+
           getBody(res, function(err, body) {
             if(err) {
               return next(err);
@@ -722,10 +751,26 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
         });
         req.once('error', next);
       }, function(err, metaResults){
-        response.statusCode = 200;
-        return response.end(metaResults[0]);     
-      }); 
+        if (err) {
+          if (!err.res) { 
+            response.statusCode = 500;
+            return response.end();
+          } else {
+            getBody(err.res, function(bodyerr, body) {
+              if (bodyerr) {
+                response.statusCode = 500;
+                return response.end();
+              }
+              response.statusCode = err.res.statusCode;
+              response.end(body);
+            });
+            return;
+          }
+        }
 
+        response.statusCode = 200;
+        return sirenResponse(response, 200, metaResults[0]);
+      });
     });
   }  else {
 
