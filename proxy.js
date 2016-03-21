@@ -768,6 +768,10 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
           }
         }
 
+        if (metaResults.length === 0) {
+          return sirenResponse(response, 404, '');
+        }
+        
         response.statusCode = 200;
         return sirenResponse(response, 200, metaResults[0]);
       });
