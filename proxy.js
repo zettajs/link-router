@@ -832,10 +832,17 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
 
         
         var req = http.get(opts, function(res) {
+          if (res.statusCode !== 200) {
+            var err = new Error('Non-200 status code from target');
+            err.res = res;
+            return next(err);
+          }
+          
           getBody(res, function(err, body) {
             if (err) {
               return next(err);
             }
+            
             try {
               var json = JSON.parse(body);
             } catch(err) {
@@ -848,8 +855,20 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
         req.once('error', next);
       }, function(err, entityResults) {
         if (err) {
-          response.statusCode = 500;
-          return response.end();
+          if (!err.res) { 
+            response.statusCode = 500;
+            return response.end();
+          } else {
+            getBody(err.res, function(bodyerr, body) {
+              if (bodyerr) {
+                response.statusCode = 500;
+                return response.end();
+              }
+              response.statusCode = err.res.statusCode;
+              response.end(body);
+            });
+            return;
+          }
         }
         
         entityResults.forEach(function(entities) {
