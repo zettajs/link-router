@@ -216,8 +216,13 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
     path: parsed.path
   };
 
+  var socketOptions = {
+    headers: {
+      'host': request.headers['host']
+    }
+  };
 
-  var wsSocket = new ws(target.url.replace('http:', 'ws:') + '/events');
+  var wsSocket = new ws(target.url.replace('http:', 'ws:') + '/events', null, socketOptions);
   cache.targets[target.url] = null;
 
   cache.pending.push(wsSocket);

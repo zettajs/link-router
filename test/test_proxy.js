@@ -156,6 +156,18 @@ describe('Proxy', function() {
         .expect(200)
         .end(done);
     })
+
+    it('events link will be ws', function(done) {
+      request(proxy._server)
+        .get('/')
+        .expect(getBody(function(res, body) {
+          var eventsLink = body.links.filter(function(link) {
+            return link.rel.indexOf(Rels.events) === 0;
+          })[0];
+          assert(eventsLink.href.indexOf('ws://') === 0);
+        }))
+        .end(done);  
+    });
     
   });  
   describe('Proxy updates from etcd', function() {
