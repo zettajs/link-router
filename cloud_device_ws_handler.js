@@ -14,8 +14,6 @@ var Handler = module.exports = function(proxy) {
 };
 
 Handler.prototype.wsQuery = function(request, socket) {
-  console.log('Cloud Device: logs');
-  
   var self = this;
   var tenantId = getTenantId(request);
   var parsed = url.parse(request.url, true);
