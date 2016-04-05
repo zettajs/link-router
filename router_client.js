@@ -31,6 +31,13 @@ var RouterClient = module.exports = function(options) {
 util.inherits(RouterClient, EventEmitter);
 
 RouterClient.prototype.findAll = function(tenantId, isCloudDevice, cb) {
+  this._findAll(tenantId, isCloudDevice, cb, true);
+};
+RouterClient.prototype.findAllNonRecursive = function(tenantId, isCloudDevice, cb) {
+  this._findAll(tenantId, isCloudDevice, cb, false);  
+};
+
+RouterClient.prototype._findAll = function(tenantId, isCloudDevice, cb, recursive) {
   if (typeof tenantId === 'function') {
     cb = tenantId;
     tenantId = null;
@@ -46,7 +53,7 @@ RouterClient.prototype.findAll = function(tenantId, isCloudDevice, cb) {
     dir = dir + '/' + CloudDeviceDir;
   }
   
-  this._client.get(dir, { recursive: true, consistent: true }, function(err, results) {
+  this._client.get(dir, { recursive: recursive, consistent: true }, function(err, results) {
     if (err) {
       cb(err);
       return;

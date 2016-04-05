@@ -1044,7 +1044,7 @@ Proxy.prototype._serveRoot = function(request, response) {
     clientAborted = true;
   });
 
-  var entities = this._routerClient.findAll(tenantId, function(err, results) {
+  var entities = this._routerClient.findAllNonRecursive(tenantId, function(err, results) {
     if (clientAborted) {
       return;
     }

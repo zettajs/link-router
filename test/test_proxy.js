@@ -105,8 +105,8 @@ describe('Proxy', function() {
       request(proxy._server)
         .get('/')
         .expect(getBody(function(res, body) {
-          assert.equal(body.links.length, 4);
-          var peerLink = body.links[3];
+          assert.equal(body.links.length, 5);
+          var peerLink = body.links[4];
           assert.equal(peerLink.title, "foo");
         }))
         .end(done);
@@ -135,7 +135,7 @@ describe('Proxy', function() {
         .get('/')
         .expect(getBody(function(res, body) {
           var selfLink = body.links[0];
-          assert.equal(body.links.length, 3);
+          assert.equal(body.links.length, 4);
           assert.notEqual(selfLink.rel.indexOf('self'), -1);
         }))
         .end(done);
