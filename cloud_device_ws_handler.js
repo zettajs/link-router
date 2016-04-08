@@ -53,12 +53,6 @@ Handler.prototype.wsQuery = function(request, socket) {
   confirmWs(request, socket);
   cache.clients.push(socket);
 
-  // for non first clients, init ws with filling in with http data.
-  if (cache.clients.length > 1) {
-    this._syncClientWithTargets(cache, request, socket, servers);
-    return;
-  }
-
   // needed later to subscribe to newly allocated targets
   cache._initialReq = request;
 
