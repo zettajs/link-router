@@ -603,188 +603,172 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
     });
   } else if(/^\/servers\/cloud-devices\/meta$/.exec(request.url)) {
     // Handle cloud devices metadata root /servers/cloud-devices/meta
-    this._routerClient.findAll(tenantId, false, function(err, results) {
-      if(err && (!err.error || err.error.errorCode !== 100)) {
-        response.statusCode = 500;
-        return response.end();
+
+    // Get all targets used by cloud-device peers
+    var targets = self.activeTargets(tenantId).map(function(device) {
+      return device.url;
+    });
+    
+    async.map(targets, function(targetUrl, next) {
+      var targetUrlParsed = url.parse(targetUrl);
+      var opts = {
+        method: 'GET',
+        headers: request.headers,
+        hostname: targetUrlParsed.hostname,
+        port: targetUrlParsed.port,
+        path: parsed.path
       }
-
-      results = results || [];
-      
-      var targets = results.map(function(target) {
-        return target.url;
-      });
-
-      async.map(targets, function(targetUrl, next) {
-        var targetUrlParsed = url.parse(targetUrl);
-        var opts = {
-          method: 'GET',
-          headers: request.headers,
-          hostname: targetUrlParsed.hostname,
-          port: targetUrlParsed.port,
-          path: parsed.path
+      var req = http.get(opts, function(res) {
+        if (res.statusCode !== 200) {
+          var err = new Error('Non-200 status code from target');
+          err.res = res;
+          return next(err);
         }
-        var req = http.get(opts, function(res) {
-          if (res.statusCode !== 200) {
-            var err = new Error('Non-200 status code from target');
-            err.res = res;
+
+        getBody(res, function(err, body) {
+          if(err) {
+            return next(err);
+          }
+          
+          try {
+            var json = JSON.parse(body);
+          } catch(e) {
             return next(err);
           }
 
-          getBody(res, function(err, body) {
-            if(err) {
-              return next(err);
+          return next(null, json);
+        });
+      });
+      req.once('error', next);
+    }, function(err, metaResults){
+      if (err) {
+        if (!err.res) { 
+          response.statusCode = 500;
+          return response.end();
+        } else {
+          getBody(err.res, function(bodyerr, body) {
+            if (bodyerr) {
+              response.statusCode = 500;
+              return response.end();
             }
-            
-            try {
-              var json = JSON.parse(body);
-            } catch(e) {
-              return next(err);
-            }
-
-            return next(null, json);
+            response.statusCode = err.res.statusCode;
+            response.end(body);
           });
-        });
-        req.once('error', next);
-      }, function(err, metaResults){
-        if (err) {
-          if (!err.res) { 
-            response.statusCode = 500;
-            return response.end();
-          } else {
-            getBody(err.res, function(bodyerr, body) {
-              if (bodyerr) {
-                response.statusCode = 500;
-                return response.end();
-              }
-              response.statusCode = err.res.statusCode;
-              response.end(body);
-            });
-            return;
-          }
+          return;
         }
+      }
 
-        
-        response.statusCode = 200;
-        var serverPath = '/servers/cloud-devices';
-        var serverUrlOpts = {
-          protocol: 'http://',
-          hostname: parsed.hostname,
-          port: parsed.port,
-          pathname: serverPath
-        };
+      
+      response.statusCode = 200;
+      var serverPath = '/servers/cloud-devices';
+      var serverUrlOpts = {
+        protocol: 'http://',
+        hostname: parsed.hostname,
+        port: parsed.port,
+        pathname: serverPath
+      };
 
-        var serverUrl = url.format(serverUrlOpts);
+      var serverUrl = url.format(serverUrlOpts);
 
-        var metaMonitorOpts = {
-          protocol:'ws://',
-          hostname: parsed.hostname,
-          port: parsed.port,
-          pathname: serverPath + '/events',
-          query: {
-            topic: 'meta'
-          }
-        };
+      var metaMonitorOpts = {
+        protocol:'ws://',
+        hostname: parsed.hostname,
+        port: parsed.port,
+        pathname: serverPath + '/events',
+        query: {
+          topic: 'meta'
+        }
+      };
 
 
-        var metaMonitor = url.format(metaMonitorOpts);
-        var responseDoc = {
-          class: ['metadata'],
-          properties: {
-            name: 'cloud-devices'
+      var metaMonitor = url.format(metaMonitorOpts);
+      var responseDoc = {
+        class: ['metadata'],
+        properties: {
+          name: 'cloud-devices'
+        },
+        entities: [],
+        links: [
+          {
+            rel: ['self'],
+            href: parseUri(request)
+          },  
+          {
+            rel: [Rels.server],
+            href: serverUrl
           },
-          entities: [],
-          links: [
-            {
-              rel: ['self'],
-              href: parseUri(request)
-            },  
-            {
-              rel: [Rels.server],
-              href: serverUrl
-            },
-            {
-              rel: [Rels.monitor],
-              href: metaMonitor
-            }
-          ]
-        }
+          {
+            rel: [Rels.monitor],
+            href: metaMonitor
+          }
+        ]
+      }
 
-        metaResults.forEach(function(metaDoc) {
-          responseDoc.entities = responseDoc.entities.concat(metaDoc.entities);
-        });
+      metaResults.forEach(function(metaDoc) {
+        responseDoc.entities = responseDoc.entities.concat(metaDoc.entities);
+      });
 
-        return sirenResponse(response, 200, responseDoc);     
-      }); 
-
+      return sirenResponse(response, 200, responseDoc);     
     });
   } else if(/^\/servers\/cloud-devices\/meta\/(.+)$/.exec(request.url)) {
     // Handle cloud devices metadata type /servers/cloud-devices/meta/<deviceType>
-    this._routerClient.findAll(tenantId, false, function(err, results) {
-      if(err && (!err.error || err.error.errorCode !== 100)) {
-        response.statusCode = 500;
-        return response.end();
+    // Get all targets used by cloud-device peers
+    var targets = self.activeTargets(tenantId).map(function(device) {
+      return device.url;
+    });
+    
+    async.map(targets, function(targetUrl, next) {
+      var targetUrlParsed = url.parse(targetUrl);
+      var opts = {
+        method: 'GET',
+        headers: request.headers,
+        hostname: targetUrlParsed.hostname,
+        port: targetUrlParsed.port,
+        path: parsed.path
       }
-
-      results = results || [];
-
-      var targets = results.map(function(target) {
-        return target.url;
-      });
-      async.map(targets, function(targetUrl, next) {
-        var targetUrlParsed = url.parse(targetUrl);
-        var opts = {
-          method: 'GET',
-          headers: request.headers,
-          hostname: targetUrlParsed.hostname,
-          port: targetUrlParsed.port,
-          path: parsed.path
+      var req = http.get(opts, function(res) {
+        if (res.statusCode !== 200) {
+          var err = new Error('Non-200 status code from target');
+          err.res = res;
+          return next(err);
         }
-        var req = http.get(opts, function(res) {
-          if (res.statusCode !== 200) {
-            var err = new Error('Non-200 status code from target');
-            err.res = res;
+
+        getBody(res, function(err, body) {
+          if(err) {
             return next(err);
           }
 
-          getBody(res, function(err, body) {
-            if(err) {
-              return next(err);
-            }
-
-            return next(null, body);
-          });
+          return next(null, body);
         });
-        req.once('error', next);
-      }, function(err, metaResults){
-        if (err) {
-          if (!err.res) { 
-            response.statusCode = 500;
-            return response.end();
-          } else {
-            getBody(err.res, function(bodyerr, body) {
-              if (bodyerr) {
-                response.statusCode = 500;
-                return response.end();
-              }
-              response.statusCode = err.res.statusCode;
-              response.end(body);
-            });
-            return;
-          }
-        }
-
-        if (metaResults.length === 0) {
-          return sirenResponse(response, 404, '');
-        }
-        
-        response.statusCode = 200;
-        return sirenResponse(response, 200, metaResults[0]);
       });
+      req.once('error', next);
+    }, function(err, metaResults){
+      if (err) {
+        if (!err.res) { 
+          response.statusCode = 500;
+          return response.end();
+        } else {
+          getBody(err.res, function(bodyerr, body) {
+            if (bodyerr) {
+              response.statusCode = 500;
+              return response.end();
+            }
+            response.statusCode = err.res.statusCode;
+            response.end(body);
+          });
+          return;
+        }
+      }
+
+      if (metaResults.length === 0) {
+        return sirenResponse(response, 404, '');
+      }
+      
+      response.statusCode = 200;
+      return sirenResponse(response, 200, metaResults[0]);
     });
   }  else {
     // Handle cloud devices servers root /servers/cloud-devices
-    
     var parsedUrlWithoutQuery = url.parse(parseUri(request), true);
     delete parsedUrlWithoutQuery.search;
     delete parsedUrlWithoutQuery.query;
@@ -858,82 +842,68 @@ Proxy.prototype._proxyCloudDevice = function(request, response) {
       
     }
 
-    // If root list all cloud devices
-    this._routerClient.findAll(tenantId, true, function(err, results) {
-      if (err && (!err.error || err.error.errorCode !== 100)) {
-        response.statusCode = 500;
-        response.end();
-        return;
-      }
+    // Get all targets used by cloud-device peers
+    var targets = self.activeTargets(tenantId).map(function(device) {
+      return device.url;
+    });
+
+    async.map(targets, function(targetUrl, next) {
+      var targetUrlParsed = url.parse(targetUrl);
       
-      if (clientAborted) {
-        return;
-      }
+      var opts = {
+        method: 'GET',
+        headers: request.headers,
+        hostname: targetUrlParsed.hostname,
+        port: targetUrlParsed.port,
+        path: parsed.path,
+      };
 
-      results = results || [];
-
-      var targets = results.map(function(device) {
-        return device.url;
-      });
-
-      async.map(targets, function(targetUrl, next) {
-        var targetUrlParsed = url.parse(targetUrl);
+      
+      var req = http.get(opts, function(res) {
+        if (res.statusCode !== 200) {
+          var err = new Error('Non-200 status code from target');
+          err.res = res;
+          return next(err);
+        }
         
-        var opts = {
-          method: 'GET',
-          headers: request.headers,
-          hostname: targetUrlParsed.hostname,
-          port: targetUrlParsed.port,
-          path: parsed.path,
-        };
-
-        
-        var req = http.get(opts, function(res) {
-          if (res.statusCode !== 200) {
-            var err = new Error('Non-200 status code from target');
-            err.res = res;
+        getBody(res, function(err, body) {
+          if (err) {
             return next(err);
           }
           
-          getBody(res, function(err, body) {
-            if (err) {
-              return next(err);
-            }
-            
-            try {
-              var json = JSON.parse(body);
-            } catch(err) {
-              return next(err);
-            }
-
-            return next(null, json.entities);
-          });
-        });
-        req.once('error', next);
-      }, function(err, entityResults) {
-        if (err) {
-          if (!err.res) { 
-            response.statusCode = 500;
-            return response.end();
-          } else {
-            getBody(err.res, function(bodyerr, body) {
-              if (bodyerr) {
-                response.statusCode = 500;
-                return response.end();
-              }
-              response.statusCode = err.res.statusCode;
-              response.end(body);
-            });
-            return;
+          try {
+            var json = JSON.parse(body);
+          } catch(err) {
+            return next(err);
           }
-        }
-        
-        entityResults.forEach(function(entities) {
-          body.entities = body.entities.concat(entities);
-        });
 
-        sirenResponse(response, 200, body);
+          return next(null, json.entities);
+        });
       });
+      req.once('error', next);
+    }, function(err, entityResults) {
+      if (err) {
+        if (!err.res) { 
+          response.statusCode = 500;
+          return response.end();
+        } else {
+          getBody(err.res, function(bodyerr, body) {
+            if (bodyerr) {
+              response.statusCode = 500;
+              return response.end();
+            }
+            response.statusCode = err.res.statusCode;
+            response.end(body);
+          });
+          return;
+        }
+      }
+
+      entityResults.forEach(function(entities) {
+        body.entities = body.entities.concat(entities);
+      });
+
+      sirenResponse(response, 200, body);
     });
   }
 };
