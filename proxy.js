@@ -1033,6 +1033,7 @@ Proxy.prototype._serveRoot = function(request, response) {
         href: joinUri(request, '/events').replace(/^http/, 'ws')
       },
       {
+        title: CloudDeviceTargetName,
         rel: [ Rels.server ],
         href: joinUri(request, '/servers/' + CloudDeviceTargetName)
       }
