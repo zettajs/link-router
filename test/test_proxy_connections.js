@@ -1,3 +1,4 @@
+var http = require('http');
 var assert = require('assert');
 var request = require('supertest');
 var zetta = require('zetta');
@@ -160,6 +161,38 @@ describe('Proxy Connection', function() {
       .expect(503)
       .end(done);
   });
+
+  it('will return 400 when target returns a 400 on peering', function(done) {
+    var server = http.createServer(function(req, res) {
+      res.statusCode = 400;
+      res.end();
+    });
+    server.on('upgrade', function(request, socket, head) {
+      socket.end('HTTP/1.1 400 Some Error\r\n\r\n\r\n');
+    });
+    
+    server.listen(0, function(err) {
+      var port = server.address().port;
+      etcd.keyValuePairs.services.zetta = {};
+      
+      etcd.keyValuePairs.services.zetta['localhost:' + port] = JSON.stringify({
+        type: 'cloud-target',
+        url: 'http://localhost:' + port,
+        created: new Date(),
+        version: "1"
+      });
+      
+      request(proxy._server)
+        .get('/peers/test?connectionId=1234567890')
+        .set('Upgrade', 'websocket')
+        .set('Connection', 'Upgrade')
+        .set('Sec-WebSocket-Version', '13')
+        .set('Sec-WebSocket-Key', new Buffer('13' + '-' + Date.now()).toString('base64'))
+        .expect(400)
+        .end(done);
+    });    
+  });
+  
 
   it('will allocate 2 targets per tenant', function(done) {
     var target2 = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });

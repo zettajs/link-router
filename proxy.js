@@ -68,7 +68,7 @@ Proxy.prototype._setup = function() {
     socket.allowHalfOpen = false;
 
     if (/^\/peers\//.test(request.url)) {
-      self._proxyPeerConnection(request, socket, receiver);
+      self._proxyPeerConnection(request, socket);
     } else {
       var receiver = new ws.Receiver();
       socket.on('data', function(buf) {
@@ -286,6 +286,19 @@ Proxy.prototype._proxyPeerConnection = function(request, socket) {
       };
 
       var target = http.request(options);
+
+      // Handle non 101 responses from target
+      target.on('response', function(targetResponse) {
+        var code = targetResponse.statusCode;
+        var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
+        var headers = Object.keys(targetResponse.headers).map(function(header) {
+          return header + ': ' + targetResponse.headers[header];
+        });
+
+        socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
+        targetResponse.pipe(socket);
+      });
+      
       target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
         var timer = null;
         var code = targetResponse.statusCode;
