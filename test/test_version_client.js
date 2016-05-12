@@ -1,5 +1,5 @@
 var assert = require('assert');
-var VersionClient = require('../version_client');
+var VersionClient = require('../clients/version_client');
 var MockEtcd = require('./mocks/mock_etcd');
 
 describe('Version client', function() {

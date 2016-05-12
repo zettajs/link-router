@@ -6,9 +6,9 @@ var ws = require('ws');
 var EventStreamsParser = require('zetta-events-stream-protocol').Parser;
 var StreamTopic = require('zetta-events-stream-protocol').StreamTopic;
 var JSCompiler = require('caql-js-compiler');
-var getBody = require('./get_body');
-var getTenantId = require('./get_tenant_id');
-var confirmWs = require('./confirm_ws');
+var getBody = require('./../../utils/get_body');
+var getTenantId = require('./../../utils/get_tenant_id');
+var confirmWs = require('./../../utils/confirm_ws');
 
 var Handler = module.exports = function(proxy) {
   this.proxy = proxy;
@@ -16,7 +16,7 @@ var Handler = module.exports = function(proxy) {
   this._queryCache = {};
 };
 
-Handler.prototype.connection = function(request, socket, wsReceiver) {
+Handler.prototype.handler = function(request, socket, wsReceiver) {
   var self = this;
   var tenantId = getTenantId(request);
   var cache = this._getCacheObj(tenantId, request, socket);
@@ -28,7 +28,7 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
 
   cache.wsSender.on('error', function(err) {
     console.error('ws sender error:', err);
-  })
+  });
 
   // cleanup backend connections to target
   socket.on('close', function() {
@@ -129,7 +129,7 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
 
     // subscribe to targets
     Object.keys(cache.targets).forEach(function(targetUrl) {
-      var socket = cache.targets[targetUrl];  
+      var socket = cache.targets[targetUrl];
       var obj = {
         topic: subscription.topic.hash(),
         type: 'subscribe' 

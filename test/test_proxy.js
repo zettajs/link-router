@@ -2,9 +2,9 @@ var assert = require('assert');
 var request = require('supertest');
 var Proxy = require('../proxy');
 var MockEtcd = require('./mocks/mock_etcd');
-var VersionClient = require('../version_client');
-var ServiceRegistryClient = require('../service_registry_client');
-var RouterClient = require('../router_client');
+var VersionClient = require('../clients/version_client');
+var ServiceRegistryClient = require('../clients/service_registry_client');
+var RouterClient = require('../clients/router_client');
 var StatsClient = require('stats-client');
 var TargetMonitor = require('../monitor/service');
 var Rels = require('zetta-rels');
@@ -195,36 +195,36 @@ describe('Proxy', function() {
   });
 
   describe('Version update', function() {
-    it('_next should return current version', function(done) {
+    it('allocation should return current version', function(done) {
       etcd.set('/services/zetta/foo', '{"url":"http://example.com/", "tenantId": "default", "version": "1"}');
       etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
       etcd._trigger('/services/zetta', []);
-      proxy._next('default', function(err, serverUrl) {
+      proxy._targetAllocation.lookup('default', function(err, serverUrl) {
         assert.equal('http://example.com/', serverUrl);
         done();
       })
     })
 
-    it('_next should provision new target when version is updated', function(done) {
+    it('allocation should provision new target when version is updated', function(done) {
       etcd.set('/services/zetta/foo', '{"url":"http://example.com/", "tenantId": "default", "version": "1"}');
       etcd.set('/services/zetta/foo2', '{"url":"http://example2.com/", "tenantId": "default", "version": "1"}');
       etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
       etcd._trigger('/services/zetta', []);
-      proxy._next('default', function(err, serverUrl) {
+      proxy._targetAllocation.lookup('default', function(err, serverUrl) {
         assert.equal('http://example.com/', serverUrl);
         etcd._trigger('/zetta/version', JSON.stringify({ version: '2'}));
-        proxy._next('default', function(err, serverUrl) {
+        proxy._targetAllocation.lookup('default', function(err, serverUrl) {
           assert.equal('http://hello.com/', serverUrl);
           done();
         });
       })
     })
 
-    it('_next should return error when no targets match current version', function(done) {
+    it('allocation should return error when no targets match current version', function(done) {
       etcd.set('/services/zetta/foo', '{"url":"http://example.com/", "tenantId": "default", "version": "2"}');
       etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
       etcd._trigger('/services/zetta', []);
-      proxy._next('default', function(err, serverUrl) {
+      proxy._targetAllocation.lookup('default', function(err, serverUrl) {
         assert(err);
         done();
       })
@@ -233,7 +233,7 @@ describe('Proxy', function() {
 
   describe('Target Allocation', function() {
 
-    it('_next should allocate at most 2 targets', function(done) {
+    it('allocation should allocate at most 2 targets', function(done) {
       etcd.set('/services/zetta/foo:3001', JSON.stringify({"type":"cloud-target","url":"http://foo:3001","created":"2015-04-29T17:55:01.000Z","version":"1"}));
       etcd.set('/services/zetta/foo:3002', JSON.stringify({"type":"cloud-target","url":"http://foo:3002","created":"2015-04-29T17:55:01.000Z","version":"1"}));
       etcd.set('/services/zetta/foo:3003', JSON.stringify({"type":"cloud-target","url":"http://foo:3003","created":"2015-04-29T17:55:01.000Z","version":"1"}));
@@ -259,9 +259,9 @@ describe('Proxy', function() {
         }
       }
       
-      proxy._next('default', check);
-      proxy._next('default', check);
-      proxy._next('default', check);
+      proxy._targetAllocation.lookup('default', check);
+      proxy._targetAllocation.lookup('default', check);
+      proxy._targetAllocation.lookup('default', check);
     })
   })
     

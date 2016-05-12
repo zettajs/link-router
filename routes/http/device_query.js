@@ -2,18 +2,18 @@ var http = require('http');
 var url = require('url');
 var async = require('async');
 var caql = require('caql');
-var parseUri = require('./parse_uri');
-var getBody = require('./get_body');
-var getTenantId = require('./get_tenant_id');
-var statusCode = require('./status_code');
-var sirenResponse = require('./siren_response');
 var Rels = require('zetta-rels');
+var parseUri = require('./../../utils/parse_uri');
+var getBody = require('./../../utils/get_body');
+var getTenantId = require('./../../utils/get_tenant_id');
+var statusCode = require('./../../utils/status_code');
+var sirenResponse = require('./../../utils/siren_response');
 
 var Handler = module.exports = function(proxy) {
   this.proxy = proxy;
 };
 
-Handler.prototype.serverQuery = function(request, response, parsed) {
+Handler.prototype.handler = function(request, response, parsed) {
   var self = this;
 
   if (parsed.query.server === '*') {

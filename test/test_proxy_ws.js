@@ -9,9 +9,9 @@ var WebSocket = require('ws');
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
 var MockEtcd = require('./mocks/mock_etcd');
-var VersionClient = require('../version_client');
-var ServiceRegistryClient = require('../service_registry_client');
-var RouterClient = require('../router_client');
+var VersionClient = require('../clients/version_client');
+var ServiceRegistryClient = require('../clients/service_registry_client');
+var RouterClient = require('../clients/router_client');
 var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
 
@@ -135,6 +135,7 @@ describe('Proxy Websockets', function() {
             done();
           })
         });
+        
       });  
   })
 
@@ -142,22 +143,28 @@ describe('Proxy Websockets', function() {
   it('ws should not disconnect after etcd router updates', function(done) {
     var count = 0;
     var c = zrx()
-      .load(proxyUrl)
-      .peer('hub.1')
-      .device(function(d) { return d.type === 'photocell'; })
-      .stream('intensity')
-      .subscribe(function() {
-        if (count === 0) {
-          count++;
-          etcd._trigger('/router/zetta', []);        
-          setTimeout(function() {
-            assert.equal(Object.keys(proxy._cache).length, 1);
-            done();
-          }, 10);
-        }
-      });
+        .load(proxyUrl)
+        .peer('hub.1')
+        .device(function(d) { return d.type === 'photocell'; })
+        .stream('intensity')
+        .subscribe(function(data) {
+          c.dispose();
+          if (count === 0) {
+            var wsUrl = proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?topic=' + data.topic;
+            var ws = new WebSocket(wsUrl);
+            ws.on('open', function open() {
+              etcd._trigger('/router/zetta', []);        
+              setTimeout(function() {
+                assert.equal(ws.readyState, WebSocket.OPEN);
+                done();
+              }, 10);
+            });
+            
+            count++;
+          }
+        });
   })
-
+  
   it('second ws client connecting should continue to recv data after first client disconnects', function(done) {
     var createClient = function(cb) {
       return zrx()
@@ -186,23 +193,23 @@ describe('Proxy Websockets', function() {
   });
 
   it('it should disconnect ws if peer disconnects', function(done) {
-    var once = false;
     var c = zrx()
-      .load(proxyUrl)
-      .peer('hub.1')
-      .device(function(d) { return d.type === 'photocell'; })
-      .stream('intensity')
-      .subscribe(function() {
-        if (!once) {
-          proxy._routerClient.emit('change', []);
-          setTimeout(function() {
-            assert.equal(Object.keys(proxy._cache).length, 0);
-            assert.equal(Object.keys(proxy._subscriptions).length, 0);
-            done();
-          }, 15)
-          once = true;
-        }
-      });
+        .load(proxyUrl)
+        .peer('hub.1')
+        .device(function(d) { return d.type === 'photocell'; })
+        .stream('intensity')
+        .subscribe(function(data) {
+          c.dispose();
+
+          var wsUrl = proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?topic=' + data.topic;
+          var ws = new WebSocket(wsUrl);
+          ws.on('open', function open() {
+            ws.on('close', function() {
+              done();
+            });
+            proxy._routerClient.emit('change', []);
+          });
+        });
   });
 
 

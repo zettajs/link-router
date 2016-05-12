@@ -1,11 +1,10 @@
 var url = require('url');
 var http = require('http');
 var async = require('async');
-var caql = require('caql');
 var ws = require('ws');
-var getBody = require('./get_body');
-var getTenantId = require('./get_tenant_id');
-var confirmWs = require('./confirm_ws');
+var getBody = require('./../../utils/get_body');
+var getTenantId = require('./../../utils/get_tenant_id');
+var confirmWs = require('./../../utils/confirm_ws');
 
 var Handler = module.exports = function(proxy) {
   var self = this;
@@ -24,7 +23,7 @@ var Handler = module.exports = function(proxy) {
   }, 5000);
 };
 
-Handler.prototype.wsQuery = function(request, socket) {
+Handler.prototype.handler = function(request, socket, receiver) {
   var self = this;
   var tenantId = getTenantId(request);
   var parsed = url.parse(request.url, true);
@@ -55,7 +54,7 @@ Handler.prototype.wsQuery = function(request, socket) {
         if (cache.targets[targetUrl] && cache.targets[targetUrl].end) {
           cache.targets[targetUrl].end();
         }
-      })
+      });
       cache.remove();
     }
   });
@@ -106,17 +105,17 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
 
   cache.targets[target.url] = null;
 
-  var target = http.request(options);
-  cache.pending.push(target);
+  var req = http.request(options);
+  cache.pending.push(req);
 
   function removeFromPending() {
-    var idx = cache.pending.indexOf(target);
+    var idx = cache.pending.indexOf(req);
     if (idx >= 0) {
       cache.pending.splice(idx, 1);
     }    
   }
 
-  target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
+  req.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
     removeFromPending();
     cache.targets[target.url] = upgradeSocket;
 
@@ -139,11 +138,11 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
     });
   });
 
-  target.on('error', function(err) {
+  req.on('error', function(err) {
     removeFromPending();
   });
 
-  target.end();
+  req.end();
 };
 
 Handler.prototype._syncClientWithTargets = function(cache, request, socket, servers, callback) {
@@ -152,7 +151,7 @@ Handler.prototype._syncClientWithTargets = function(cache, request, socket, serv
   }
 
   var parsed = url.parse(request.url, true);
-  var servers = servers.map(function(s) {
+  servers = servers.map(function(s) {
     return url.parse(s.url);
   });
   // make http req to target servers to populate existing devices
@@ -221,13 +220,13 @@ Handler.prototype._syncClientWithTargets = function(cache, request, socket, serv
             
             sender.on('error', function(err) {
               console.error('sender error:', err);
-            })
+            });
             res.on('data', function(buf) {
               sender.send(buf);
             });
             res.on('end', function() {
               nextDevice();
-            })
+            });
           });
 
           cache.pending.push(deviceReq);
