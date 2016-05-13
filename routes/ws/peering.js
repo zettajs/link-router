@@ -24,7 +24,7 @@ var Peering = module.exports = function(proxy) {
   ['SIGINT', 'SIGTERM'].forEach(function(signal) {
     process.on(signal, function() {
       
-      var count = proxy._peerSockets.length;
+      var count = self._peerSockets.length;
       self._peerSockets.forEach(function(peer) {
         self.proxy._routerClient.remove(peer.tenantId, peer.targetName, function() {
           count--;
