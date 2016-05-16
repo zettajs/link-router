@@ -1,3 +1,4 @@
+var url = require('url');
 var http = require('http');
 var util = require('util');
 var EventEmitter = require('events').EventEmitter;
@@ -174,3 +175,52 @@ Proxy.prototype.lookupPeersTarget = function(tenantId, targetName, cb) {
     cb(null, serverUrl);
   }
 }
+
+Proxy.prototype.proxyToTarget = function(targetUrl, request, response, options) {
+  var parsed = url.parse(targetUrl);
+
+  if (options === undefined) {
+    options = {};
+  }
+  
+  var httpOptions = {
+    hostname: parsed.hostname,
+    port: parsed.port,
+    
+    method: options.method || request.method,
+    headers: options.headers || request.headers,
+    path: options.path || request.url
+  };
+
+  var target = http.request(httpOptions);
+
+  if (options.timeout) {
+    target.setTimeout(options.timeout, function() {
+      target.abort();
+      response.statusCode = 500;
+      response.end();
+    });
+  }
+
+  // close target req if client is closed before target finishes
+  response.on('close', function() {
+    target.abort();
+  });
+
+  target.on('response', function(targetResponse) {
+    response.statusCode = targetResponse.statusCode;
+
+    Object.keys(targetResponse.headers).forEach(function(header) {
+      response.setHeader(header, targetResponse.headers[header]);
+    });
+
+    targetResponse.pipe(response);
+  });
+
+  target.on('error', function() {
+    response.statusCode = 500;
+    response.end();
+  });
+
+  request.pipe(target);
+};

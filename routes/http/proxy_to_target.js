@@ -35,39 +35,7 @@ TargetProxy.prototype.handler = function(request, response, parsed) {
 
     // Set targetname for stats
     request._targetName = targetName;
-    
-    var server = url.parse(serverUrl);
 
-    var options = {
-      method: request.method,
-      headers: request.headers,
-      hostname: server.hostname,
-      port: server.port,
-      path: parsed.path
-    };
-
-    var target = http.request(options);
-
-    // close target req if client is closed before target finishes
-    response.on('close', function() {
-      target.abort();
-    });
-
-    target.on('response', function(targetResponse) {
-      response.statusCode = targetResponse.statusCode;
-
-      Object.keys(targetResponse.headers).forEach(function(header) {
-        response.setHeader(header, targetResponse.headers[header]);
-      });
-
-      targetResponse.pipe(response);
-    });
-
-    target.on('error', function() {
-      response.statusCode = 500;
-      response.end();
-    });
-
-    request.pipe(target);    
+    self.proxy.proxyToTarget(serverUrl, request, response);
   });
 };

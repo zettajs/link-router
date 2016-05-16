@@ -44,7 +44,7 @@ PeerManagement.prototype.proxyReq = function(request, response, parsed) {
         return;
       }
 
-      self._proxyReq(request, response, parsed, serverUrl);
+      self.proxy.proxyToTarget(serverUrl, request, response);
     });
   } else {
     // HTTP POST|PUT|DELETE /peer-management/<connection_id> - Locate in all active targets
@@ -63,7 +63,7 @@ PeerManagement.prototype.proxyReq = function(request, response, parsed) {
         return;
       }
 
-      self._proxyReq(request, response, parsed, serverUrl);
+      self.proxy.proxyToTarget(serverUrl, request, response);
     });
   }
 };
@@ -116,33 +116,6 @@ PeerManagement.prototype._locateConnectionIdTarget = function(tenantId, connecti
     });
     return cb(null, (server) ? server.url : null);
   });
-};
-
-PeerManagement.prototype._proxyReq = function(request, response, parsed, serverUrl) {
-  var server = url.parse(serverUrl);
-  var options = {
-    method: request.method,
-    headers: request.headers,
-    hostname: server.hostname,
-    port: server.port,
-    path: parsed.path
-  };
-
-  var target = http.request(options);
-  target.on('response', function(targetResponse) {
-    response.statusCode = targetResponse.statusCode;
-    Object.keys(targetResponse.headers).forEach(function(header) {
-      response.setHeader(header, targetResponse.headers[header]);
-    });
-    targetResponse.pipe(response);
-  });
-
-  target.on('error', function() {
-    response.statusCode = 500;
-    response.end();
-  });
-
-  request.pipe(target);
 };
 
 PeerManagement.prototype.serveRoot = function(request, response, parsed) {
