@@ -5,14 +5,13 @@ var parseUri = require('./../../utils/parse_uri');
 var joinUri = require('./../../utils/join_uri');
 
 var Root = module.exports = function(proxy) {
+  this.name = 'root'; // for stats logging
   this.proxy = proxy;
 };
 
 Root.prototype.handler = function(request, response, parsed) {
   var self = this;
   var tenantId = getTenantId(request);
-
-  var startTime = new Date().getTime();
 
   var body = {
     class: ['root'],
@@ -37,7 +36,7 @@ Root.prototype.handler = function(request, response, parsed) {
     clientAborted = true;
   });
 
-  var entities = this.proxy._routerClient.findAll(tenantId, function(err, results) {
+  this.proxy._routerClient.findAll(tenantId, function(err, results) {
     if (clientAborted) {
       return;
     }
@@ -64,10 +63,6 @@ Root.prototype.handler = function(request, response, parsed) {
         ]
       }
     ];
-
-    var duration = new Date().getTime()-startTime;
-    self.proxy._statsClient.timing('http.req.root', duration, { tenant: tenantId });
-    self.proxy._statsClient.increment('http.req.root.status.2xx', { tenant: tenantId });
 
     sirenResponse(response, 200, body);
   });

@@ -10,33 +10,34 @@ var statusCode = require('./../../utils/status_code');
 var sirenResponse = require('./../../utils/siren_response');
 
 var Handler = module.exports = function(proxy) {
+  this.name = 'query'; // for stats logging
   this.proxy = proxy;
 };
 
 Handler.prototype.handler = function(request, response, parsed) {
   var self = this;
 
+
+  try {
+    caql.parse(parsed.query.ql);
+  } catch (err) {
+    sirenResponse(response, 400, this._buildQueryError(request, err));
+    return;
+  }
+  
   if (parsed.query.server === '*') {
     return this._crossServerQueryReq.apply(this, arguments);
   }
 
   var tenantId = getTenantId(request);
   var targetName = parsed.query.server;
-  var startTime = new Date().getTime();
-
-  try {
-    caql.parse(parsed.query.ql);
-  } catch (err) {
-    self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId, targetName: targetName });
-    sirenResponse(response, 400, this._buildQueryError(request, err));
-    return;
-  }
+  // Set targetname for stats
+  request._targetName = targetName;
 
   var body = this._buildQueryResult(request);
 
   this.proxy.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
     if (err) {
-      self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId, targetName: targetName });
       sirenResponse(response, 200, body);
       return;
     }
@@ -53,9 +54,7 @@ Handler.prototype.handler = function(request, response, parsed) {
     var target = http.request(options);
     target.on('response', function(targetResponse) {
       response.statusCode = targetResponse.statusCode;
-      self.proxy._statsClient.increment('http.req.query.status.' + statusCode(response.statusCode), { tenant: tenantId, targetName: targetName });
-      var duration = new Date().getTime() - startTime;
-      self.proxy._statsClient.timing('http.req.query', duration, { tenant: tenantId, targetName: targetName });
+      
       Object.keys(targetResponse.headers).forEach(function(header) {
         response.setHeader(header, targetResponse.headers[header]);
       });
@@ -63,7 +62,6 @@ Handler.prototype.handler = function(request, response, parsed) {
     });
 
     target.on('error', function() {
-      self.proxy._statsClient.increment('http.req.query.status.5xx', { tenant: tenantId, targetName: targetName });
       response.statusCode = 500;
       response.end();
     });
@@ -76,16 +74,6 @@ Handler.prototype.handler = function(request, response, parsed) {
 Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
   var self = this;
   var tenantId = getTenantId(request);
-  var startTime = new Date().getTime();
-
-  try {
-    caql.parse(parsed.query.ql);
-  } catch (err) {
-    self.proxy._statsClient.increment('http.req.query.status.4xx', { tenant: tenantId });
-    sirenResponse(response, 400, this._buildQueryError(request, err));
-    return;
-  }
-
   var body = this._buildQueryResult(request);
 
   var servers = this.proxy.activeTargets(tenantId).map(function(server) { 
@@ -93,7 +81,6 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
   });
 
   if (servers.length === 0) {
-    self.proxy._statsClient.increment('http.req.query.status.2xx', { tenant: tenantId });
     sirenResponse(response, 200, body);
     return;
   }
@@ -139,7 +126,6 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
     target.end();
   }, function(err, results) {
     if (err) {
-      self.proxy._statsClient.increment('http.req.query.status.5xx', { tenant: tenantId });
       response.statusCode = 500;
       response.end();
       return;
@@ -151,10 +137,6 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
     includes.forEach(function(ret) {
       body.entities = body.entities.concat(ret.json.entities);
     });
-    
-    self.proxy._statsClient.increment('http.req.query.status.2xx', { tenant: tenantId });
-    var duration = new Date().getTime() - startTime;
-    self.proxy._statsClient.timing('http.req.query', duration, { tenant: tenantId });
 
     sirenResponse(response, 200, body);
   });

@@ -1,29 +1,8 @@
 var url = require('url');
 var ws = require('ws');
-
-function initWsParser(socket) {
-  var receiver = new ws.Receiver();
-  socket.on('data', function(buf) {
-    receiver.add(buf);
-  });
-
-  // request from client to close websocket
-  receiver.onclose = function() {
-    socket.end();
-  };
-
-  // handle ping requests
-  receiver.onping = function(data, flags) {
-    var sender = new ws.Sender(socket);
-    sender.pong(data, { binary: flags.binary === true }, true);
-  };
-
-  socket.once('close', function() {
-    receiver.cleanup();
-  });
-
-  return receiver;
-}
+var logger = require('./logger');
+var statsdLogger = require('./statsd_logger');
+var getTenantId = require('./../utils/get_tenant_id');
 
 module.exports = function(proxy) {
 
@@ -33,23 +12,41 @@ module.exports = function(proxy) {
   var httpPeerManagement = new (require('./http/peer_management'))(proxy);
   var httpProxy          = new (require('./http/proxy_to_target'))(proxy);
   var httpDeviceQuery    = new (require('./http/device_query'))(proxy);
-  
+
   proxy._server.on('request', function(request, response) {
-    var parsed = url.parse(request.url, true);
+
+    // ModuleName to be set for stats logging
+    request._moduleName = 'na';
+    request._tenantId = getTenantId(request);
+
+    var reqStartTime = new Date().getTime();
+    response.once('finish', function() {
+      var duration = (new Date().getTime()-reqStartTime);
+      logger(request, response, duration);
+      statsdLogger(proxy._statsClient, request, response, request._moduleName, duration);
+    });
     
-    if (parsed.pathname === '/') {
-      if (parsed.query.ql) {
-        // Device query or cross server query
-        httpDeviceQuery.handler(request, response, parsed);
-      } else {
-        // Server root response
-        httpRoot.handler(request, response, parsed);
+    var parsed = url.parse(request.url, true);
+
+    var routes = [
+      { regex: /^\/$/, route: httpRoot }, // /
+      { regex: /^\/\?.+/, route: httpDeviceQuery }, // /?...
+      { regex: /^\/peer-management/, route: httpPeerManagement }, // /peer-management
+      { regex: /^\/.+/, route: httpProxy } // *
+    ];
+
+    var found = routes.some(function(obj) {
+      if (obj.regex.test(request.url)) {
+        request._moduleName = obj.route.name;
+        obj.route.handler(request, response, parsed);
+        return true;
       }
-    } else if (/^\/peer-management/.test(request.url)) {
-      httpPeerManagement.handler(request, response, parsed);
-    } else {
-      // Proxy to zetta target
-      httpProxy.handler(request, response, parsed);
+    });
+
+    // Handle 404
+    if (!found) {
+      response.statusCode = 404;
+      response.end();
     }
   });
 
@@ -91,3 +88,28 @@ module.exports = function(proxy) {
     }
   });
 };
+
+function initWsParser(socket) {
+  var receiver = new ws.Receiver();
+  socket.on('data', function(buf) {
+    receiver.add(buf);
+  });
+
+  // request from client to close websocket
+  receiver.onclose = function() {
+    socket.end();
+  };
+
+  // handle ping requests
+  receiver.onping = function(data, flags) {
+    var sender = new ws.Sender(socket);
+    sender.pong(data, { binary: flags.binary === true }, true);
+  };
+
+  socket.once('close', function() {
+    receiver.cleanup();
+  });
+
+  return receiver;
+}
+

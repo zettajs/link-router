@@ -8,6 +8,7 @@ var joinUri = require('./../../utils/join_uri');
 var statusCode = require('./../../utils/status_code');
 
 var TargetProxy = module.exports = function(proxy) {
+  this.name = 'proxy'; // for stats logging
   this.proxy = proxy;
 };
 
@@ -15,14 +16,11 @@ TargetProxy.prototype.handler = function(request, response, parsed) {
   var self = this;
   var targetName;
   var tenantId = getTenantId(request);
-  
-  var startTime = new Date().getTime();
 
   var match = /^\/servers\/(.+)$/.exec(request.url);
   if (match) {
     targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
   } else {
-    self.proxy._statsClient.increment('http.req.proxy.status.4xx', { tenant: tenantId });
     response.statusCode = 404;
     response.end();
     return;
@@ -30,14 +28,15 @@ TargetProxy.prototype.handler = function(request, response, parsed) {
   
   self.proxy.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
     if (err) {
-      self.proxy._statsClient.increment('http.req.proxy.status.4xx', { tenant: tenantId });
       response.statusCode = 404;
       response.end();
       return;
     }
 
+    // Set targetname for stats
+    request._targetName = targetName;
+    
     var server = url.parse(serverUrl);
-
 
     var options = {
       method: request.method,
@@ -61,15 +60,10 @@ TargetProxy.prototype.handler = function(request, response, parsed) {
         response.setHeader(header, targetResponse.headers[header]);
       });
 
-      var duration = new Date().getTime() - startTime;
-      self.proxy._statsClient.timing('http.req.proxy', duration, { tenant: tenantId, targetName: targetName });
-      self.proxy._statsClient.increment('http.req.proxy.status.' + statusCode(response.statusCode), { tenant: tenantId, targetName: targetName });
-
       targetResponse.pipe(response);
     });
 
     target.on('error', function() {
-      self.proxy._statsClient.increment('http.req.proxy.status.5xx', { tenant: tenantId, targetName: targetName });
       response.statusCode = 500;
       response.end();
     });

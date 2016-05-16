@@ -8,17 +8,14 @@ var parseUri = require('./../../utils/parse_uri');
 var statusCode = require('./../../utils/status_code');
 
 var PeerManagement = module.exports = function(proxy) {
+  this.name = 'peer-management'; // for stats logging
   this.proxy = proxy;
 };
 
 PeerManagement.prototype.handler = function(request, response, parsed) {
-  var self = this;
-  var tenantId = getTenantId(request);
-  
   if (!(/^\/peer-management\/(.+)$/.exec(request.url))) {
     // only allow GET on the root
     if (request.method !== 'GET') {
-      self.proxy._statsClient.increment('http.req.peer-management.status.4xx', { tenant: tenantId });
       response.statusCode = 405;
       response.end();
       return;
@@ -32,7 +29,6 @@ PeerManagement.prototype.handler = function(request, response, parsed) {
 PeerManagement.prototype.proxyReq = function(request, response, parsed) {
   var self = this;
   var tenantId = getTenantId(request);
-  var startTime = new Date().getTime();
 
   // Can either be hub_name or a connection id
   var lookupId = decodeURIComponent(/^\/peer-management\/(.+)$/.exec(parsed.pathname)[1]);
@@ -43,7 +39,6 @@ PeerManagement.prototype.proxyReq = function(request, response, parsed) {
     // lookup target by hub_name
     this.proxy.lookupPeersTarget(tenantId, lookupId, function(err, serverUrl) {
       if (err) {
-        self.proxy._statsClient.increment('http.req.peer-management.status.4xx', { tenant: tenantId });
         response.statusCode = 404;
         response.end();
         return;
@@ -57,14 +52,12 @@ PeerManagement.prototype.proxyReq = function(request, response, parsed) {
     // Find the target with the connection id
     this._locateConnectionIdTarget(tenantId, lookupId, function(err, serverUrl) {
       if (err) {
-        self.proxy._statsClient.increment('http.req.peer-management.status.5xx', { tenant: tenantId });
         response.statusCode = 500;
         response.end();
         return;
       }
 
-      if (!serverUrl) {        
-        self.proxy._statsClient.increment('http.req.peer-management.status.4xx', { tenant: tenantId });
+      if (!serverUrl) {
         response.statusCode = 404;
         response.end();
         return;
@@ -126,8 +119,6 @@ PeerManagement.prototype._locateConnectionIdTarget = function(tenantId, connecti
 };
 
 PeerManagement.prototype._proxyReq = function(request, response, parsed, serverUrl) {
-  var self = this;
-  var tenantId = getTenantId(request);
   var server = url.parse(serverUrl);
   var options = {
     method: request.method,
@@ -139,7 +130,6 @@ PeerManagement.prototype._proxyReq = function(request, response, parsed, serverU
 
   var target = http.request(options);
   target.on('response', function(targetResponse) {
-    self.proxy._statsClient.increment('http.req.peer-management.status.' + statusCode(response.statusCode), { tenant: tenantId });
     response.statusCode = targetResponse.statusCode;
     Object.keys(targetResponse.headers).forEach(function(header) {
       response.setHeader(header, targetResponse.headers[header]);
@@ -148,7 +138,6 @@ PeerManagement.prototype._proxyReq = function(request, response, parsed, serverU
   });
 
   target.on('error', function() {
-    self.proxy._statsClient.increment('http.req.peer-management.status.5xx', { tenant: tenantId });
     response.statusCode = 500;
     response.end();
   });
@@ -159,7 +148,6 @@ PeerManagement.prototype._proxyReq = function(request, response, parsed, serverU
 PeerManagement.prototype.serveRoot = function(request, response, parsed) {
   var self = this;
   var tenantId = getTenantId(request);
-  var startTime = new Date().getTime();
 
   var servers = this.proxy.activeTargets(tenantId).map(function(server) { 
     return url.parse(server.url);
@@ -185,7 +173,6 @@ PeerManagement.prototype.serveRoot = function(request, response, parsed) {
   };
 
   if (servers.length === 0) {
-    self.proxy._statsClient.increment('http.req.peer-management.status.2xx', { tenant: tenantId });
     sirenResponse(response, 200, body);
     return;
   }
@@ -231,7 +218,6 @@ PeerManagement.prototype.serveRoot = function(request, response, parsed) {
     target.end();
   }, function(err, results) {
     if (err) {
-      self.proxy._statsClient.increment('http.req.peer-management.status.5xx', { tenant: tenantId });
       response.statusCode = 500;
       response.end();
       return;
@@ -249,10 +235,6 @@ PeerManagement.prototype.serveRoot = function(request, response, parsed) {
       }
     });
     
-    self.proxy._statsClient.increment('http.req.peer-management.status.2xx', { tenant: tenantId });
-    var duration = new Date().getTime() - startTime;
-    self.proxy._statsClient.timing('http.req.peer-management', duration, { tenant: tenantId });
-
     sirenResponse(response, 200, body);
   });
 };
