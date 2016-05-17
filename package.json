@@ -4,7 +4,8 @@
   "description": "Proxy server component for zetta multi cloud",
   "main": "proxy_server.js",
   "scripts": {
-    "test": "./node_modules/.bin/mocha -R spec -t 10000"
+    "test": "./node_modules/.bin/mocha -R spec -t 10000",
+    "coverage": "bin/_coverage"
   },
   "author": "",
   "license": "MIT",
@@ -19,7 +20,7 @@
     "rx": "^2.3.25",
     "stats-client": "^0.2.0",
     "ws": "^0.7.1",
-    "zetta-events-stream-protocol": "^4.0.0",
+    "zetta-events-stream-protocol": "^5.0.0",
     "zetta-rels": "^0.5.0"
   },
   "devDependencies": {
@@ -27,9 +28,9 @@
     "memdown": "^1.0.0",
     "mocha": "^2.2.1",
     "supertest": "^0.15.0",
-    "zetta": "^1.0.0-beta.5",
-    "zetta-led-mock-driver": "^0.9.0",
-    "zetta-photocell-mock-driver": "^0.6.0",
+    "zetta": "^1.0.0-beta.7",
+    "zetta-led-mock-driver": "^0.10.0",
+    "zetta-photocell-mock-driver": "^0.9.0",
     "zrx": "^0.5.0"
   }
 }

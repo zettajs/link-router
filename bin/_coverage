@@ -1,0 +1,23 @@
+#!/bin/sh
+
+PROJECT="link-router"
+
+if [ $(which jscoverage) ] 
+then
+    echo "Running test coverage..."
+    rm -rf ./$PROJECT-HEAD
+    rm -rf ./$PROJECT-jscoverage
+    git archive --format=tar --prefix=$PROJECT-HEAD/ HEAD | tar x
+    jscoverage --exclude=node_modules ./$PROJECT-HEAD ./$PROJECT-jscoverage
+    cd ./$PROJECT-jscoverage/
+    npm install
+    mocha --reporter html-cov > coverage.html
+    open coverage.html
+else
+    echo "jscoverage is not installed"
+    echo "if on OS X:"
+    echo "  use brew install jscoverage"
+    echo "if on linux:"
+    echo "  use sudo apt-get install jscoverage"
+fi
+

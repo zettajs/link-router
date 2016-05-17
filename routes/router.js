@@ -4,14 +4,25 @@ var logger = require('./logger');
 var statsdLogger = require('./statsd_logger');
 var getTenantId = require('./../utils/get_tenant_id');
 
+var HttpRoot            = require('./http/root');
+var HttpPeerManagement  = require('./http/peer_management');
+var HttpProxy           = require('./http/proxy_to_target');
+var HttpDeviceQuery     = require('./http/device_query');
+var WsEvents            = require('./ws/events');
+var WsMultiplexedEvents = require('./ws/multiplexed_events');
+var WsPeerManagement    = require('./ws/peer_management');
+var WsDeviceQuery       = require('./ws/device_query');
+var WsPeering           = require('./ws/peering');
+
+
 module.exports = function(proxy) {
 
   // Http Routes
   
-  var httpRoot           = new (require('./http/root'))(proxy);
-  var httpPeerManagement = new (require('./http/peer_management'))(proxy);
-  var httpProxy          = new (require('./http/proxy_to_target'))(proxy);
-  var httpDeviceQuery    = new (require('./http/device_query'))(proxy);
+  var httpRoot           = new HttpRoot(proxy);
+  var httpPeerManagement = new HttpPeerManagement(proxy);
+  var httpProxy          = new HttpProxy(proxy);
+  var httpDeviceQuery    = new HttpDeviceQuery(proxy);
 
   proxy._server.on('request', function(request, response) {
 
@@ -52,11 +63,11 @@ module.exports = function(proxy) {
 
   // Websocket Routes
  
-  var wsEvents            = new (require('./ws/events'))(proxy);
-  var wsMultiplexedEvents = new (require('./ws/multiplexed_events'))(proxy);
-  var wsPeerManagement    = new (require('./ws/peer_management'))(proxy);
-  var wsDeviceQuery       = new (require('./ws/device_query'))(proxy);
-  var wsPeering           = new (require('./ws/peering'))(proxy);
+  var wsEvents            = new WsEvents(proxy);
+  var wsMultiplexedEvents = new WsMultiplexedEvents(proxy);
+  var wsPeerManagement    = new WsPeerManagement(proxy);
+  var wsDeviceQuery       = new WsDeviceQuery(proxy);
+  var wsPeering           = new WsPeering(proxy);
   
   proxy._server.on('upgrade', function(request, socket) {
     // Don't allow half open sockets on ws
