@@ -1,10 +1,12 @@
 var url = require('url');
 var http = require('http');
 var util = require('util');
+var async = require('async');
 var EventEmitter = require('events').EventEmitter;
 var RouterCache = require('./router_cache');
 var router = require('./routes/router');
 var TargetAllocation = require('./target_allocation');
+var getBody = require('./utils/get_body');
 
 var Proxy = module.exports = function(serviceRegistryClient,
                                       routerClient,
@@ -224,3 +226,72 @@ Proxy.prototype.proxyToTarget = function(targetUrl, request, response, options) 
 
   request.pipe(target);
 };
+
+// Preform same request on all active targets for a tenant, get body from each target and
+// return to callback.
+Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
+
+  // If tenantId is string get active servers, allow servers to be overiden with array of urls 
+  var servers = ((typeof tenantId === 'string') ? this.activeTargets(tenantId) : tenantId ).map(function(server) { 
+    return url.parse(server.url);
+  });
+
+  if (typeof options === 'function') {
+    cb = options;
+    options = {};
+  }
+
+  var pending = [];
+  async.mapLimit(servers, (options.asyncLimit || 5), function(parsed, next) {
+    var httpOptions = {
+      hostname: parsed.hostname,
+      port: parsed.port,
+      
+      method: options.method || request.method,
+      headers: options.headers || request.headers,
+      path: options.path || request.url
+    };
+
+    var target = http.request(httpOptions);
+    pending.push(target);
+
+    if (options.timeout) {
+      target.setTimeout(options.timeout, function() {
+        target.abort();
+        next(null, { err: new Error('Request to target timed out.') });
+      });
+    }
+
+    target.on('response', function(targetResponse) {
+      getBody(targetResponse, function(err, body) {
+        if (err) {
+          return next(null, { server: url.format(parsed), err: err });
+        }
+        
+        var json = null;
+        try {
+          json = JSON.parse(body.toString());
+        } catch (err) {
+          return next(null, { server: url.format(parsed), err: err });
+        }
+
+        next(null, { server: url.format(parsed), res: targetResponse, json: json } );
+      });
+    });
+
+    target.on('error', function(err) {
+      next(null, { server: url.format(parsed), err: err });
+    });
+
+    target.end();    
+  }, function(err, results) {
+    if (err) {
+      pending.forEach(function(req) {
+        req.abort();
+      });
+      return cb(err);
+    }
+    return cb(null, results);
+  });
+};
+

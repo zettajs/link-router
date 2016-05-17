@@ -1,11 +1,7 @@
-var http = require('http');
 var url = require('url');
-var async = require('async');
-var getBody = require('./../../utils/get_body');
 var getTenantId = require('./../../utils/get_tenant_id');
 var sirenResponse = require('./../../utils/siren_response');
 var parseUri = require('./../../utils/parse_uri');
-var statusCode = require('./../../utils/status_code');
 
 var PeerManagement = module.exports = function(proxy) {
   this.name = 'peer-management'; // for stats logging
@@ -50,7 +46,7 @@ PeerManagement.prototype.proxyReq = function(request, response, parsed) {
     // HTTP POST|PUT|DELETE /peer-management/<connection_id> - Locate in all active targets
 
     // Find the target with the connection id
-    this._locateConnectionIdTarget(tenantId, lookupId, function(err, serverUrl) {
+    this._locateConnectionIdTarget(tenantId, request, lookupId, function(err, serverUrl) {
       if (err) {
         response.statusCode = 500;
         response.end();
@@ -68,63 +64,43 @@ PeerManagement.prototype.proxyReq = function(request, response, parsed) {
   }
 };
 
-PeerManagement.prototype._locateConnectionIdTarget = function(tenantId, connectionId, cb) {
-  var self = this;
-  var servers = this.proxy.activeTargets(tenantId);
+PeerManagement.prototype._locateConnectionIdTarget = function(tenantId, request, connectionId, cb) {
+  var options = {
+    method: 'GET',
+    path: '/peer-management',
+    headers: {},
+    timeout: 10000
+  };
+  
+  this.proxy.scatterGatherActive(tenantId, request, options, function(err, results) {
+    if (err) {
+      return cb(err);
+    }
 
-  var pending = [];
-  async.detectLimit(servers, 5, function locateConnectionId(server, next) {
-    var parsed = url.parse(server.url);
-    parsed.pathname = '/peer-management';
-    
-    var req = http.get(url.format(parsed), function(res) {
-      if (res.statusCode !== 200) {
-        return next(false);
+    var found = results.some(function(ret) {
+      if (ret.err || ret.res.statusCode !== 200 || !ret.json) {
+        return false;
+      }
+      
+      if (!Array.isArray(ret.json.entities)) {
+        return false;
       }
 
-      getBody(res, function(err, body) {
-        if (err) {
-          return next(false);
-        }
-        var json = null;
-        try {
-          json = JSON.parse(body.toString());
-        } catch (err) {
-          return next(false);
-        }
-
-        if (!Array.isArray(json.entities)) {
-          return next(false);
-        }
-        
-        var found = json.entities.some(function(entity) {
-          return (entity.properties.connectionId === connectionId);
-        });
-
-        next(found);
+      return ret.json.entities.some(function(entity) {
+        cb(null, ret.server);
+        return (entity.properties.connectionId === connectionId);
       });
     });
 
-    req.setTimeout(10000);
-    req.on('error', function(err) {
-      next(false);
-    });
-    pending.push(req);
-  }, function(server) {
-    pending.forEach(function(req) {
-      req.abort();
-    });
-    return cb(null, (server) ? server.url : null);
+    if (!found) {
+      return cb(null, null);
+    }
   });
 };
 
 PeerManagement.prototype.serveRoot = function(request, response, parsed) {
   var self = this;
   var tenantId = getTenantId(request);
-
-  var servers = this.proxy.activeTargets(tenantId).map(function(server) { 
-    return url.parse(server.url);
-  });
   
   var selfLink = parseUri(request);
   var parsed = url.parse(selfLink, true);
@@ -145,57 +121,13 @@ PeerManagement.prototype.serveRoot = function(request, response, parsed) {
     ]
   };
 
-  if (servers.length === 0) {
-    sirenResponse(response, 200, body);
-    return;
-  }
-
-  var pending = [];
-  response.on('close', function() {
-    pending.forEach(function(req) {
-      req.abort();
-    });
-  });
-
-  async.mapLimit(servers, 5, function(server, next) {
-    var options = {
-      method: request.method,
-      headers: request.headers,
-      hostname: server.hostname,
-      port: server.port,
-      path: parsed.path
-    };
-
-    var target = http.request(options);
-    pending.push(target);
-    target.on('response', function(targetResponse) {
-      getBody(targetResponse, function(err, body) {
-        if (err) {
-          return next(null, { err: err });
-        }
-        var json = null;
-        try {
-          json = JSON.parse(body.toString());
-        } catch (err) {
-          return next(null, { err: err });
-        }
-
-        next(null, { res: targetResponse, json: json } );
-      });
-    });
-
-    target.on('error', function(err) {
-      next(null, { err: err });
-    });
-
-    target.end();
-  }, function(err, results) {
+  self.proxy.scatterGatherActive(tenantId, request, function(err, results) {
     if (err) {
       response.statusCode = 500;
       response.end();
       return;
     }
-    
+
     // include only 200 status code responses
     var includes = results.filter(function(ret) { return !ret.err && ret.res.statusCode === 200 && ret.json; });
 
@@ -211,6 +143,4 @@ PeerManagement.prototype.serveRoot = function(request, response, parsed) {
     sirenResponse(response, 200, body);
   });
 };
-
-
 
