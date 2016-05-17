@@ -14,7 +14,8 @@ var Handler = module.exports = function(proxy) {
   setInterval(function() {
     Object.keys(self._cache).forEach(function(tenant) {
       var count = 0;
-      Object.keys(self._cache[tenant]).forEach(function(obj) {
+      Object.keys(self._cache[tenant]).forEach(function(query) {
+        var obj = self._cache[tenant][query];
         count += obj.clients.length;
       });
 
@@ -146,113 +147,78 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
 };
 
 Handler.prototype._syncClientWithTargets = function(cache, request, socket, servers, callback) {
+  var self = this;
+  
   if (typeof callback !== 'function') {
     callback = function() {};
   }
-
+  
   var parsed = url.parse(request.url, true);
-  servers = servers.map(function(s) {
-    return url.parse(s.url);
-  });
-  // make http req to target servers to populate existing devices
-  async.eachLimit(servers, 5, function(server, next) {
-    server.query = {
-      server: '*',
-      ql: parsed.query.topic.split('query/')[1]
-    };
-    server = url.parse(url.format(server));
-    
-    function buildOptions(path) {
+  servers = servers.map(function(obj) { return obj.url; });
+
+  var options = {
+    method: 'GET',
+    headers: {
+    },
+    path: url.format({
+      pathname: '/',
+      query: {
+        server: '*',
+        ql: parsed.query.topic.split('query/')[1]
+      }
+    })
+  };
+
+  this.proxy.scatterGatherActive(servers, request, options, function(err, results) {
+    if (err) {
+      return callback(err);
+    }
+
+    // include only 200 status code responses
+    var devicePaths = [];
+    results.forEach(function(ret) {
+      if (ret.err || ret.res.statusCode !== 200 || !ret.json) {
+        return;
+      }
+
+      ret.json.entities.forEach(function(entity) {
+        devicePaths.push(entity.links.filter(function(l) { return l.rel.indexOf('self') >= 0;})[0].href);
+      });
+
       var options = {
         method: 'GET',
-        headers: {},
-        hostname: server.hostname,
-        port: server.port,
-        path: path
+        headers: {
+        },
+        useServersPath: true
       };
       
       if (request.headers['origin']) {
         options.headers.origin = request.headers['origin'];
       }
-
+      
       if (request.headers['host']) {
         options.headers.host = request.headers['host'];
       }
-      
-      return options;
-    }
 
-    var target = http.request(buildOptions(server.path));
-    cache.pending.push(target);
-    target.on('response', function(targetResponse) {
-      var idx = cache.pending.indexOf(target);
-      if (idx >= 0) {
-        cache.pending.splice(idx, 1);
-      }
-
-      if (targetResponse.statusCode !== 200) {
-        return;
-      }
-      getBody(targetResponse, function(err, body) {
+      self.proxy.scatterGatherActive(devicePaths, request, options, function(err, results) {
         if (err) {
-          return;
+          return callback(err);
         }
-        var json = null;
-        try {
-          json = JSON.parse(body.toString());
-        } catch (err) {
-          return;
-        }
-
+        
         var sender = new ws.Sender(socket);
-        async.eachLimit(json.entities, 5, function(entity, nextDevice) {
-          var devicePath = url.parse(entity.links.filter(function(l) { return l.rel.indexOf('self') >= 0;})[0].href).path;
+        sender.once('error', function(err) {
+          console.error('sender error:', err);
+        });
+        results.forEach(function(ret) {
+          if (ret.err || ret.res.statusCode !== 200 || !ret.json) {
+            return;
+          }
 
-          var deviceReq = http.request(buildOptions(devicePath), function(res) {
-            var idx = cache.pending.indexOf(deviceReq);
-            if (idx >= 0) {
-              cache.pending.splice(idx, 1);
-            }
-
-            if (res.statusCode !== 200) {
-              return next();
-            }
-            
-            sender.on('error', function(err) {
-              console.error('sender error:', err);
-            });
-            res.on('data', function(buf) {
-              sender.send(buf);
-            });
-            res.on('end', function() {
-              nextDevice();
-            });
-          });
-
-          cache.pending.push(deviceReq);
-          deviceReq.on('error', function(err) {
-            var idx = cache.pending.indexOf(deviceReq);
-            if (idx >= 0) {
-              cache.pending.splice(idx, 1);
-            }
-          });
-
-          deviceReq.end();
-        }, function() {
-          next();
+          sender.send(JSON.stringify(ret.json));
         });
       });
-    });
-
-    target.on('error', function(err) {
-      var idx = cache.pending.indexOf(target);
-      if (idx >= 0) {
-        cache.pending.splice(idx, 1);
-      }
-    });
-
-    target.end();
-  }, callback);
+    });    
+  });
 };
 
 Handler.prototype._getCacheObj = function(tenantId, queryHash) {

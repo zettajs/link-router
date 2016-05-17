@@ -232,9 +232,13 @@ Proxy.prototype.proxyToTarget = function(targetUrl, request, response, options) 
 Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
 
   // If tenantId is string get active servers, allow servers to be overiden with array of urls 
-  var servers = ((typeof tenantId === 'string') ? this.activeTargets(tenantId) : tenantId ).map(function(server) { 
-    return url.parse(server.url);
-  });
+  if (Array.isArray(tenantId)) {
+    var servers = tenantId;
+  } else {
+    var servers = this.activeTargets(tenantId).map(function(v) { return v.url; });
+  }
+
+  servers = servers.map(url.parse);
 
   if (typeof options === 'function') {
     cb = options;
@@ -251,6 +255,11 @@ Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
       headers: options.headers || request.headers,
       path: options.path || request.url
     };
+
+    // When specifing array of urls optionally use path on each array entry not request or option path
+    if (options.useServersPath) {
+      httpOptions.path = parsed.path;
+    }
 
     var target = http.request(httpOptions);
     pending.push(target);
