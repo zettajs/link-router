@@ -1,12 +1,8 @@
-var http = require('http');
 var url = require('url');
-var async = require('async');
 var caql = require('caql');
 var Rels = require('zetta-rels');
 var parseUri = require('./../../utils/parse_uri');
-var getBody = require('./../../utils/get_body');
 var getTenantId = require('./../../utils/get_tenant_id');
-var statusCode = require('./../../utils/status_code');
 var sirenResponse = require('./../../utils/siren_response');
 
 var Handler = module.exports = function(proxy) {
@@ -51,56 +47,8 @@ Handler.prototype._crossServerQueryReq = function(request, response, parsed) {
   var self = this;
   var tenantId = getTenantId(request);
   var body = this._buildQueryResult(request);
-
-  var servers = this.proxy.activeTargets(tenantId).map(function(server) { 
-    return url.parse(server.url);
-  });
-
-  if (servers.length === 0) {
-    sirenResponse(response, 200, body);
-    return;
-  }
   
-  var pending = [];
-  response.on('close', function() {
-    pending.forEach(function(req) {
-      req.abort();
-    });
-  });
-
-  async.mapLimit(servers, 5, function(server, next) {
-    var options = {
-      method: request.method,
-      headers: request.headers,
-      hostname: server.hostname,
-      port: server.port,
-      path: parsed.path
-    };
-
-    var target = http.request(options);
-    pending.push(target);
-    target.on('response', function(targetResponse) {
-      getBody(targetResponse, function(err, body) {
-        if (err) {
-          return next(null, { err: err });
-        }
-        var json = null;
-        try {
-          json = JSON.parse(body.toString());
-        } catch (err) {
-          return next(null, { err: err });
-        }
-
-        next(null, { res: targetResponse, json: json } );
-      });
-    });
-
-    target.on('error', function(err) {
-      next(null, { err: err });
-    });
-
-    target.end();
-  }, function(err, results) {
+  self.proxy.scatterGatherActive(tenantId, request, function(err, results) {
     if (err) {
       response.statusCode = 500;
       response.end();
