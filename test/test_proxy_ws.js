@@ -192,25 +192,4 @@ describe('Proxy Websockets', function() {
     }, 200)
   });
 
-  it('it should disconnect ws if peer disconnects', function(done) {
-    var c = zrx()
-        .load(proxyUrl)
-        .peer('hub.1')
-        .device(function(d) { return d.type === 'photocell'; })
-        .stream('intensity')
-        .subscribe(function(data) {
-          c.dispose();
-
-          var wsUrl = proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?topic=' + data.topic;
-          var ws = new WebSocket(wsUrl);
-          ws.on('open', function open() {
-            ws.on('close', function() {
-              done();
-            });
-            proxy._routerClient.emit('change', []);
-          });
-        });
-  });
-
-
 });

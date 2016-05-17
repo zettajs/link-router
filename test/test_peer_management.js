@@ -236,7 +236,7 @@ describe('Peer Management API', function() {
   })
 
   describe('WS API', function() {
-    it('should receive disconnect message', function(done) {
+    it('should receive disconnect message when peer disconnects', function(done) {
       var ws = new WebSocket(proxyUrl + '/peer-management');
       ws.on('open', function() {
         setTimeout(function() {
@@ -252,14 +252,13 @@ describe('Peer Management API', function() {
       });
     })
 
-    it('should disconnect if not the right url', function(done) {
+    it('should receive a 404 if not the right url', function(done) {
       var ws = new WebSocket(proxyUrl + '/peer-management/12');
-      ws.on('close', function(code) {
-        assert.equal(code, 1001);
+      ws.on('error', function(err) {
+        assert.equal(err.message, 'unexpected server response (404)');
         done();
-      });
+      })
     })
-
 
   })
   

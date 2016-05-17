@@ -10,10 +10,7 @@ var HttpProxy           = require('./http/proxy_to_target');
 var HttpDeviceQuery     = require('./http/device_query');
 var WsEvents            = require('./ws/events');
 var WsMultiplexedEvents = require('./ws/multiplexed_events');
-var WsPeerManagement    = require('./ws/peer_management');
-var WsDeviceQuery       = require('./ws/device_query');
 var WsPeering           = require('./ws/peering');
-
 
 module.exports = function(proxy) {
 
@@ -65,8 +62,6 @@ module.exports = function(proxy) {
  
   var wsEvents            = new WsEvents(proxy);
   var wsMultiplexedEvents = new WsMultiplexedEvents(proxy);
-  var wsPeerManagement    = new WsPeerManagement(proxy);
-  var wsDeviceQuery       = new WsDeviceQuery(proxy);
   var wsPeering           = new WsPeering(proxy);
   
   proxy._server.on('upgrade', function(request, socket) {
@@ -84,10 +79,28 @@ module.exports = function(proxy) {
     // Setup WS Receiver to listen for close/ping messages
     var receiver = initWsParser(socket);
 
-    if (request.url === '/events') {
-      // Multiplexed ws
-      wsMultiplexedEvents.handler(request, socket, receiver);
-    } else if (/^\/events\?/.test(request.url)) {
+    var routes = [
+      { regex: /^\/events$/, route: wsMultiplexedEvents }, // /events for multiplexed
+      { regex: /^\/peer-management$/, route: wsEvents }, // /peer-management
+      { regex: /^\/events\?/, route: wsEvents }, // /events?topic=
+      { regex: /^\/servers\/(.+)$/, route: wsEvents }, // /servers/<hub>/events?topic=
+    ];
+
+    var found = routes.some(function(obj) {
+      if (obj.regex.test(request.url)) {
+        obj.route.handler(request, socket, receiver);
+        return true;
+      }
+    });
+
+    // Handle 404
+    if (!found) {
+      var responseLine = 'HTTP/1.1 404  Not Found\r\n\r\n\r\n';
+      socket.end(responseLine);
+    }
+
+    /*
+    else if (/^\/events\?/.test(request.url)) {
       // Reactive device query
       wsDeviceQuery.handler(request, socket, receiver);
     } else if (/^\/peer-management/.test(request.url)) {
@@ -97,6 +110,7 @@ module.exports = function(proxy) {
       // Single Topic Event ws
       wsEvents.handler(request, socket, receiver);
     }
+    */
   });
 };
 

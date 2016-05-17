@@ -1,191 +1,244 @@
 var http = require('http');
 var url = require('url');
+var ws = require('ws');
 var getTenantId = require('./../../utils/get_tenant_id');
 var confirmWs = require('./../../utils/confirm_ws');
 
-function parseSubscription(hash) {
-  var arr = hash.split(':');
-  return {
-    tenantId: decodeURIComponent(arr[0]),
-    targetName: decodeURIComponent(arr[1]),
-    targetHost: decodeURIComponent(arr[2]),
-    url: decodeURIComponent(arr[3])
-  };
-}
-
-var Events = module.exports = function(proxy) {
+var Handler = module.exports = function(proxy) {
   var self = this;
+
   this.proxy = proxy;
   this._cache = {};
-  this._subscriptions = {};
-
-  this.proxy.on('router-update', function(results) {
-    self._disconnectStaleWsClients();
-  });
-
-  setInterval(function() {
-    var wsCounts = {};
-    Object.keys(self._subscriptions).forEach(function(topicHash) {
-      var parsed = parseSubscription(topicHash);
-      if (!wsCounts[parsed.tenantId]) {
-        wsCounts[parsed.tenantId] = 0;
-      }
-      wsCounts[parsed.tenantId]++;
-    });
-    Object.keys(wsCounts).forEach(function(tenant) {
-      self.proxy._statsClient.gauge('ws.event', wsCounts[tenant], { tenant: tenant });
-    });
-
-  }, 5000);
 };
 
-Events.prototype.handler = function(request, socket, receiver) {
+Handler.prototype.handler = function(request, socket, receiver) {
   var self = this;
-  var parsed = url.parse(request.url, true);
-  var targetName;
   var tenantId = getTenantId(request);
+  var queryHash = this.getQueryHash(request);
+  var cache = this.cache(tenantId, queryHash);
 
-  var match = /^\/servers\/(.+)$/.exec(request.url);
-  if (match) {
-    targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
-  } else {
-    self.proxy._statsClient.increment('http.req.event.status.4xx', { tenant: tenantId });
-    var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
-    socket.end(responseLine);
+  // Client disconnected
+  socket.once('close', this.clientClosed.bind(this, cache, socket));
+
+  var servers = this.proxy.activeTargets(tenantId);
+
+  // Confirm ws connection with 101 response
+  confirmWs(request, socket);
+
+  cache.clients.push(socket);
+
+  // for non first clients, init ws with filling in with http data.
+  if (cache.clients.length > 1) {
+    // Device queries need the initial list for non first sockets
+    if (/^\/events\?.+/.test(request.url)) {
+      this._syncClientWithTargets(cache, request, socket, servers);
+    }
     return;
   }
 
-  this.proxy.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
-    if (err) {
-      self.proxy._statsClient.increment('http.req.event.status.5xx', { tenant: tenantId });
-      var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
-      socket.end(responseLine);
-      return;
-    }
+  // needed later to subscribe to newly allocated targets
+  cache._initialReq = request;
 
-    if (!serverUrl) {
-      self.proxy._statsClient.increment('http.req.event.status.4xx', { tenant: tenantId });
-      var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
-      socket.end(responseLine);
-      return;
-    }
+  var handleNewTargets = function() {
+    self.proxy.activeTargets(tenantId).forEach(function(server) {
+      if (!cache.targets.hasOwnProperty(server.url)) {
+        self._subscribeToTarget(cache, server);
+      }
+    });
+  };
 
-    var urlHash = [tenantId, targetName, serverUrl, request.url].map(encodeURIComponent).join(':');
-    if (!self._subscriptions.hasOwnProperty(urlHash)) {
-      self._subscriptions[urlHash] = [];
-    }
+  self.proxy.on('services-update', handleNewTargets);
+  cache.finished = function() {
+    self.proxy.removeListener('services-update', handleNewTargets);
+  };
+  
+  servers.forEach(function(server) {
+    self._subscribeToTarget(cache, server);
+  });
+};
 
-    socket.on('error', function(err) {
-      console.error('Client Socket Error:', tenantId, targetName, err);
+Handler.prototype.clientClosed = function(cache, socket) {
+  // client closed
+  var idx = cache.clients.indexOf(socket);
+  if (idx >= 0) {
+    cache.clients.splice(idx, 1);
+  }
+
+  if (cache.clients.length === 0) {
+    // abort all pending http req
+    cache.pending.forEach(function(req) {
+      req.abort();
+    });
+    
+    // no more clients attached. close targets
+    Object.keys(cache.targets).forEach(function(targetUrl) {
+      // guard against clients closing before upgrade event is sent
+      if (cache.targets[targetUrl] && cache.targets[targetUrl].end) {
+        cache.targets[targetUrl].end();
+      }
+    });
+    cache.remove();
+  }
+};
+
+Handler.prototype.getQueryHash = function(request) {
+  if (/^\/peer-management/.test(request.url)) {
+    return '/peer-management';
+  } else {
+    var parsed = url.parse(request.url, true);
+    return parsed.query.topic || request.url;
+  }
+};
+
+Handler.prototype._subscribeToTarget = function(cache, target) {
+  var server = url.parse(target.url);
+  var request = cache._initialReq;
+  var parsed = url.parse(request.url);
+  var options = {
+    method: request.method,
+    headers: request.headers,
+    hostname: server.hostname,
+    port: server.port,
+    path: parsed.path
+  };
+
+  cache.targets[target.url] = null;
+
+  var req = http.request(options);
+  cache.pending.push(req);
+
+  function removeFromPending() {
+    var idx = cache.pending.indexOf(req);
+    if (idx >= 0) {
+      cache.pending.splice(idx, 1);
+    }    
+  }
+
+  req.once('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
+    removeFromPending();
+    cache.targets[target.url] = upgradeSocket;
+
+    upgradeSocket.on('data', function(data) {
+      cache.clients.forEach(function(client) {
+        client.write(data);
+      });
     });
 
-    function removeSocketFromCache() {
-      var idx = self._subscriptions[urlHash].indexOf(socket);
-      if (idx >= 0) {
-        self._subscriptions[urlHash].splice(idx, 1);
+    upgradeSocket.once('close', function() {
+      delete cache.targets[target.url];
+      // close all clients
+      cache.clients.forEach(function(client) {
+        client.end();
+      });
+    });
+  });
+
+  req.once('error', function(err) {
+    removeFromPending();
+  });
+
+  req.end();
+};
+
+Handler.prototype.cache = function(tenantId, queryHash) {
+  var self = this;
+  if (!this._cache[tenantId]) {
+    this._cache[tenantId] = {};
+  }
+  
+  if (!this._cache[tenantId][queryHash]) {
+    this._cache[tenantId][queryHash] = {
+      clients: [], // list of client sockets
+      targets: {}, // <targetUrl>: socket
+      pending: [], // list of pending http req assoc to this query
+      remove: function() {
+        if (typeof self._cache[tenantId][queryHash].finished === 'function') {
+          self._cache[tenantId][queryHash].finished();
+        }
+        delete self._cache[tenantId][queryHash];
+        if (Object.keys(self._cache[tenantId]).length === 0) {
+          delete self._cache[tenantId];
+        }
+      },
+      finished: null // allow to be updated
+    };
+  }
+
+  return this._cache[tenantId][queryHash];
+};
+
+Handler.prototype._syncClientWithTargets = function(cache, request, socket, servers, callback) {
+  var self = this;
+  
+  if (typeof callback !== 'function') {
+    callback = function() {};
+  }
+  
+  var parsed = url.parse(request.url, true);
+  servers = servers.map(function(obj) { return obj.url; });
+
+  var options = {
+    method: 'GET',
+    headers: {
+    },
+    path: url.format({
+      pathname: '/',
+      query: {
+        server: '*',
+        ql: parsed.query.topic.split('query/')[1]
+      }
+    })
+  };
+
+  this.proxy.scatterGatherActive(servers, request, options, function(err, results) {
+    if (err) {
+      return callback(err);
+    }
+
+    // include only 200 status code responses
+    var devicePaths = [];
+    results.forEach(function(ret) {
+      if (ret.err || ret.res.statusCode !== 200 || !ret.json) {
+        return;
+      }
+
+      ret.json.entities.forEach(function(entity) {
+        devicePaths.push(entity.links.filter(function(l) { return l.rel.indexOf('self') >= 0;})[0].href);
+      });
+
+      var options = {
+        method: 'GET',
+        headers: {
+        },
+        useServersPath: true
+      };
+      
+      if (request.headers['origin']) {
+        options.headers.origin = request.headers['origin'];
       }
       
-      if (self._subscriptions[urlHash].length === 0) {
-        if (self._cache[urlHash]) {
-          self._cache[urlHash].end();
-        }
-        delete self._subscriptions[urlHash];
-        delete self._cache[urlHash];
+      if (request.headers['host']) {
+        options.headers.host = request.headers['host'];
       }
-    }
 
-    var cleanup = function() {};
-
-    socket.on('close', function() {
-      cleanup();
-    });
-
-    if (self._cache.hasOwnProperty(urlHash)) {
-      confirmWs(request, socket);
-      self._subscriptions[urlHash].push(socket);
-      self.proxy._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
-      cleanup = function() {
-        removeSocketFromCache();
-      };
-
-      return;
-    }
-
-    var server = url.parse(serverUrl);
-    var options = {
-      method: request.method,
-      headers: request.headers,
-      hostname: server.hostname,
-      port: server.port,
-      path: parsed.path
-    };
-
-    var target = http.request(options);
-
-    cleanup = function () {
-      target.abort();
-    };
-
-    target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
-      var code = targetResponse.statusCode;
-      var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
-      var headers = Object.keys(targetResponse.headers).map(function(header) {
-        return header + ': ' + targetResponse.headers[header];
-      });
-
-      self.proxy._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
-      socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
-
-      self._cache[urlHash] = upgradeSocket;
-      self._subscriptions[urlHash].push(socket);
-
-      cleanup = function() {
-        removeSocketFromCache();
-      };
-
-      upgradeSocket.on('data', function(data) {
-        if (self._subscriptions[urlHash]) {
-          self._subscriptions[urlHash].forEach(function(socket) {
-            socket.write(data);
-          });
+      self.proxy.scatterGatherActive(devicePaths, request, options, function(err, results) {
+        if (err) {
+          return callback(err);
         }
+        
+        var sender = new ws.Sender(socket);
+        sender.once('error', function(err) {
+          console.error('sender error:', err);
+        });
+        results.forEach(function(ret) {
+          if (ret.err || ret.res.statusCode !== 200 || !ret.json) {
+            return;
+          }
+
+          sender.send(JSON.stringify(ret.json));
+        });
       });
-
-      upgradeSocket.on('close', function() {
-        delete self._cache[urlHash];
-        if (self._subscriptions[urlHash]) {
-          self._subscriptions[urlHash].forEach(function(socket) {
-            socket.end();
-          });
-        }
-      });
-
-      upgradeSocket.on('error', function(err) {
-        console.error('Target Ws Socket Error:', tenantId, targetName, err);
-      });
-    });
-
-    target.on('error', function() {
-      var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
-      socket.end(responseLine);
-    });
-
-    request.pipe(target);
+    });    
   });
 };
 
-// disconnects client ws where the hub no longer exists or 
-// exists on a different target server
-Events.prototype._disconnectStaleWsClients = function() {
-  var self = this;
-
-  // make sure target exists in router and is the same as what is subscribed to
-  Object.keys(this._cache).forEach(function(hash) {
-    var obj = parseSubscription(hash);
-    var serverUrl = self.proxy._routerCache.get(obj.tenantId, obj.targetName);
-    if (serverUrl === undefined || serverUrl !== obj.targetHost) {
-      // end subscription to zetta target, will close all clients
-      self._cache[hash].end();
-    }
-  });
-};
