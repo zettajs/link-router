@@ -16,11 +16,35 @@ var Handler = module.exports = function(proxy) {
   this._queryCache = {};
 };
 
+function getFilters(request, headerName) {
+  var headers = request.headers[headerName];
+  if (!headers) {
+    return [];
+  }
+
+  return headers.split(';').map(StreamTopic.parse);
+}
+
+function getAllowFilters(request) {
+  return getFilters(request, 'x-apigee-iot-allow-filter');
+}
+function getDenyFilters(request) {
+  return getFilters(request, 'x-apigee-iot-deny-filter');
+}
+
 Handler.prototype.connection = function(request, socket, wsReceiver) {
   var self = this;
   var tenantId = getTenantId(request);
   var cache = this._getCacheObj(tenantId, request, socket);
 
+  try {
+    var allowFilters = getAllowFilters(request);
+    var denyFilters = getDenyFilters(request);
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+  
 //  self.proxy._statsClient.increment('http.req.wsquery.status.1xx', { tenant: tenantId });
   socket.on('error', function(err) {
     console.error('Ws Event Stream Error:', tenantId, err);
@@ -105,6 +129,26 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
       return;
     }
 
+    var allowed = (allowFilters.length === 0) ? true : allowFilters.some(function(filter) {
+      return filter.match(msg.topic);
+    });
+
+    var denied = (denyFilters.length === 0) ? false : denyFilters.some(function(filter) {
+      return filter.match(msg.topic);
+    });
+
+    if (!allowed || denied) {
+      var msg = {
+        type: 'error',
+        code: 401,
+        timestamp: new Date().getTime(),
+        topic: msg.topic,
+        message: 'Unauthorized to subscribe to topic.'
+      };
+      cache.wsSender.send(JSON.stringify(msg));
+      return;
+    }
+
     if(topic.streamQuery && !self._queryCache[topic.streamQuery]) {
       try {
         var compiler = new JSCompiler();
@@ -122,7 +166,7 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
         return;
       }
     }
-
+    
     var subscription = { subscriptionId: ++cache.subscriptionIndex, topic: topic, limit: msg.limit };
     
     cache.subscribe(subscription);
