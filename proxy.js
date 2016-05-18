@@ -1,6 +1,7 @@
 var url = require('url');
 var http = require('http');
 var util = require('util');
+var spdy = require('spdy');
 var async = require('async');
 var EventEmitter = require('events').EventEmitter;
 var RouterCache = require('./router_cache');
@@ -25,6 +26,8 @@ var Proxy = module.exports = function(serviceRegistryClient,
   this._servers = {};
   this._targetMonitor = targetMonitor;
   this._targetAllocation = new TargetAllocation(this);
+
+  this._spdyCache = { }; // <target>: spdyAgent 
 
   this.peerActivityTimeout = 60000;
 
@@ -184,16 +187,23 @@ Proxy.prototype.proxyToTarget = function(targetUrl, request, response, options) 
   if (options === undefined) {
     options = {};
   }
-  
+
   var httpOptions = {
     hostname: parsed.hostname,
     port: parsed.port,
+    agent: this.getSpdyAgent(targetUrl),
     
     method: options.method || request.method,
     headers: options.headers || request.headers,
     path: options.path || request.url
   };
 
+  // If no forwarded protocol then we must set http because zetta will
+  // set the ws urls to spdy.
+  if (!httpOptions.headers.hasOwnProperty('x-forwarded-proto')) {
+    httpOptions.headers['x-forwarded-proto'] = 'http';
+  }
+  
   var target = http.request(httpOptions);
 
   if (options.timeout) {
@@ -230,7 +240,8 @@ Proxy.prototype.proxyToTarget = function(targetUrl, request, response, options) 
 // Preform same request on all active targets for a tenant, get body from each target and
 // return to callback.
 Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
-
+  var self = this;
+  
   // If tenantId is string get active servers, allow servers to be overiden with array of urls 
   if (Array.isArray(tenantId)) {
     var servers = tenantId;
@@ -250,6 +261,7 @@ Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
     var httpOptions = {
       hostname: parsed.hostname,
       port: parsed.port,
+      agent: self.getSpdyAgent(url.format(parsed)),
       
       method: options.method || request.method,
       headers: options.headers || request.headers,
@@ -302,5 +314,42 @@ Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
     }
     return cb(null, results);
   });
+};
+
+Proxy.prototype.getSpdyAgent = function(targetUrl) {
+  var self = this;
+  var parsed = url.parse(targetUrl);
+  var hash = parsed.hash; // hash = host.com:8080
+  
+  if (this._spdyCache[hash]) {
+    return this._spdyCache[hash];
+  }
+
+  this._spdyCache[hash] = spdy.createAgent({
+    host: parsed.hostname,
+    port: parsed.port,
+
+    // Optional SPDY options
+    spdy: {
+      plain: true,
+      ssl: false,
+      protocols: ['spdy/3.1']
+    }
+  }).once('error', function (err) {
+    delete self._spdyCache[hash];
+  });
+  
+  var em = this._spdyCache[hash]._spdyState.connection.socket;
+
+  em.once('close', function() {
+    delete self._spdyCache[hash];
+  });
+  
+  em.once('error', function() {
+    delete self._spdyCache[hash];
+  });
+
+
+  return this._spdyCache[hash];
 };
 

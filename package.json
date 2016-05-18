@@ -18,6 +18,7 @@
     "moment": "^2.13.0",
     "node-etcd": "^3.0.2",
     "rx": "^2.3.25",
+    "spdy": "^1.32.5",
     "stats-client": "^0.2.0",
     "ws": "^0.7.1",
     "zetta-events-stream-protocol": "^5.0.0",
@@ -31,6 +32,6 @@
     "zetta": "^1.0.0-beta.7",
     "zetta-led-mock-driver": "^0.10.0",
     "zetta-photocell-mock-driver": "^0.9.0",
-    "zrx": "^0.5.0"
+    "zrx": "^0.6.0"
   }
 }
