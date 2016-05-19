@@ -30,7 +30,9 @@ module.exports = function(proxy) {
     var reqStartTime = new Date().getTime();
     response.once('finish', function() {
       var duration = (new Date().getTime()-reqStartTime);
-      logger(request, response, duration);
+      if (!process.env.SILENT) {
+        logger(request, response, duration);
+      }
       statsdLogger(proxy._statsClient, request, response, request._moduleName, duration);
     });
     
@@ -98,19 +100,6 @@ module.exports = function(proxy) {
       var responseLine = 'HTTP/1.1 404  Not Found\r\n\r\n\r\n';
       socket.end(responseLine);
     }
-
-    /*
-    else if (/^\/events\?/.test(request.url)) {
-      // Reactive device query
-      wsDeviceQuery.handler(request, socket, receiver);
-    } else if (/^\/peer-management/.test(request.url)) {
-      // Peer management ws
-      wsPeerManagement.handler(request, socket, receiver);
-    } else {
-      // Single Topic Event ws
-      wsEvents.handler(request, socket, receiver);
-    }
-    */
   });
 };
 

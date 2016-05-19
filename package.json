@@ -4,7 +4,7 @@
   "description": "Proxy server component for zetta multi cloud",
   "main": "proxy_server.js",
   "scripts": {
-    "test": "./node_modules/.bin/mocha -R spec -t 10000",
+    "test": "SILENT=true ./node_modules/.bin/mocha -R spec -t 10000",
     "coverage": "bin/_coverage"
   },
   "author": "",
