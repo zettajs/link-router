@@ -16,6 +16,9 @@ var RouterClient = require('../clients/router_client');
 var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
 
+// Fix for Proxy subscribing to SIGs on every test
+process.setMaxListeners(0);
+
 function getBody(fn) {
   return function(res) {
     try {

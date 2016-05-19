@@ -16,6 +16,9 @@ var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
 var TestDriver = require('./mocks/example_driver');
 
+// Fix for Proxy subscribing to SIGs on every test
+process.setMaxListeners(0);
+
 function getBody(fn) {
   return function(res) {
     try {

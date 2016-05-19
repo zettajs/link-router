@@ -21,8 +21,9 @@ var Peering = module.exports = function(proxy) {
     });
   }, 5000);
 
+  
   ['SIGINT', 'SIGTERM'].forEach(function(signal) {
-    process.on(signal, function() {
+    process.once(signal, function() {
       
       var count = self._peerSockets.length;
       self._peerSockets.forEach(function(peer) {

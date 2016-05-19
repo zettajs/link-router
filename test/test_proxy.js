@@ -9,6 +9,9 @@ var StatsClient = require('stats-client');
 var TargetMonitor = require('../monitor/service');
 var Rels = require('zetta-rels');
 
+// Fix for Proxy subscribing to SIGs on every test
+process.setMaxListeners(0);
+
 function getBody(fn) {
   return function(res) {
     try {
