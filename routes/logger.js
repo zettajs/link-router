@@ -12,13 +12,20 @@ module.exports = function(req, res, duration) {
   var status = res.statusCode;
   var length = 0;
 
-  var contentLength = res.getHeader('Content-Length');
-  if (contentLength === '0' || contentLength === undefined) {
-    length = 0;
+  if (status !== 101) { 
+    var contentLength = res.getHeader('Content-Length');
+    if (contentLength === '0' || contentLength === undefined) {
+      length = 0;
+    } else {
+      length = contentLength;
+    }
   } else {
-    length = contentLength;
+    length = 'UPGRADED';
   }
 
-  var log = [ ip, UNKNOWN, UNKNOWN, date, requestSummary, status, length ];
-  console.log(log.join('\t'));
+
+  if (!process.env.SILENT) {
+    var log = [ ip, UNKNOWN, UNKNOWN, date, requestSummary, status, length ];
+    console.log(log.join('\t'));
+  }
 }

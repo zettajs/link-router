@@ -30,9 +30,7 @@ module.exports = function(proxy) {
     var reqStartTime = new Date().getTime();
     response.once('finish', function() {
       var duration = (new Date().getTime()-reqStartTime);
-      if (!process.env.SILENT) {
-        logger(request, response, duration);
-      }
+      logger(request, response, duration);
       statsdLogger(proxy._statsClient, request, response, request._moduleName, duration);
     });
     
@@ -67,14 +65,22 @@ module.exports = function(proxy) {
   var wsPeering           = new WsPeering(proxy);
   
   proxy._server.on('upgrade', function(request, socket) {
+
+    // Fake response for logging
+    var fakeResponse = {
+      statusCode: 101,
+      getHeader: function() { return undefined; }
+    };
+    
     // Don't allow half open sockets on ws
     // Done in WS server to match functionality.
     // https://github.com/websockets/ws/blob/0669cae044d1902957acc7c89e1edfcf956f2de8/lib/WebSocketServer.js#L58
     socket.allowHalfOpen = false;
-
+    
     // Handler peering requests
     if (/^\/peers\//.test(request.url)) {
       wsPeering.handler(request, socket);
+      logger(request, fakeResponse);
       return;
     }
 
@@ -91,6 +97,7 @@ module.exports = function(proxy) {
     var found = routes.some(function(obj) {
       if (obj.regex.test(request.url)) {
         obj.route.handler(request, socket, receiver);
+        logger(request, fakeResponse);
         return true;
       }
     });
@@ -99,6 +106,9 @@ module.exports = function(proxy) {
     if (!found) {
       var responseLine = 'HTTP/1.1 404  Not Found\r\n\r\n\r\n';
       socket.end(responseLine);
+
+      fakeResponse.statusCode = 404;
+      logger(request, fakeResponse);
     }
   });
 };
