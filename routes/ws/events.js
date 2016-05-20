@@ -86,7 +86,12 @@ Handler.prototype.getQueryHash = function(request) {
     return '/peer-management';
   } else {
     var parsed = url.parse(request.url, true);
-    return parsed.query.topic || request.url;
+    var targetName = '';
+    if (/^\/servers\/(.+)$/.exec(request.url)) {
+      targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(request.url)[1].split('/')[0]);
+    }
+    
+    return targetName + ':' + parsed.query.topic || request.url;
   }
 };
 

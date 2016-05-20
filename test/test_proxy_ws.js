@@ -195,4 +195,58 @@ describe('Proxy Websockets', function() {
     }, 200)
   });
 
+
+  it('two ws clients with the same query but different hubs should receive the correct hubs data', function(done) {
+
+    var hub2 = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() })
+      .name('hub.2')
+      .silent()
+      .link(proxyUrl)
+      .use(Photocell)
+      .listen(0, function() {
+
+        var id1 = Object.keys(hub.runtime._jsDevices)[0];
+        var id2 = Object.keys(hub2.runtime._jsDevices)[0];
+
+        var called = false;
+        hub2.pubsub.subscribe('_peer/connect', function(topic, data) {
+          if (!called) {
+            called = true;
+
+            var topic = 'photocell/*/intensity'
+            var ws1 = new WebSocket(proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?topic=' + topic);
+            var ws2 = new WebSocket(proxyUrl.replace('http', 'ws') + '/servers/hub.2/events?topic=' + topic);
+
+            var received1 = false;
+            var received2 = false;
+            ws1.on('open', function open() {
+              ws1.on('message', function(data) {
+                assert.equal(data.indexOf(id2), -1);
+                assert(data.indexOf(id1) >= 0);
+                received1 = true;
+                if (received1 && received2) {
+                  done();
+                  done = function(){};
+                }
+              })
+            });
+
+            ws2.on('open', function open() {
+              ws2.on('message', function(data) {
+                assert.equal(data.indexOf(id1), -1);
+                assert(data.indexOf(id2) >= 0);
+                received2 = true;
+                if (received1 && received2) {
+                  done();
+                  done = function(){};
+                }
+              })
+            });
+          }
+        });
+      })    
+  });
+
+  
+
 });
