@@ -22,7 +22,7 @@ function getFilters(request, headerName) {
     return [];
   }
 
-  return headers.split(';').map(StreamTopic.parse);
+  return headers.split(';').map(decodeURIComponent).map(StreamTopic.parse);
 }
 
 function getAllowFilters(request) {
