@@ -5,14 +5,16 @@ var zetta = require('zetta');
 var Led = require('zetta-led-mock-driver');
 var WebSocket = require('ws');
 var StatsClient = require('stats-client');
+var redirect = require('zetta-peer-redirect');
 
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
 var MockEtcd = require('./mocks/mock_etcd');
+var MockTenantMgmtApi = require('./mocks/tenant_mgmt_api');
+var RouterUpdater = require('./mocks/routing_updater');
 var VersionClient = require('../clients/version_client');
 var ServiceRegistryClient = require('../clients/service_registry_client');
 var RouterClient = require('../clients/router_client');
-var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
 
 // Fix for Proxy subscribing to SIGs on every test
@@ -41,9 +43,16 @@ describe('Queries', function() {
   var targets = [];
   var etcd = null;
 
-  beforeEach(function(done) {
+  beforeEach(function() {
     etcd = new MockEtcd();
+  })
+  
+  beforeEach(function(done) {
+    tenantMgmtApi = new MockTenantMgmtApi(etcd);
+    tenantMgmtApi.listen(0, done);
+  })
 
+  beforeEach(function(done) {
     etcd.set('/zetta/version', '{"version":"1"}');    
     var versionClient = new VersionClient({ client: etcd });
     var serviceRegistryClient = new ServiceRegistryClient({ client: etcd });
@@ -57,6 +66,7 @@ describe('Queries', function() {
       targets.push(target);
 
       target.name('target.' + i)
+      target.use(RouterUpdater('', routerClient, serviceRegistryClient));
       target.silent();
       
       target.listen(0, function(err) {
@@ -74,8 +84,7 @@ describe('Queries', function() {
     
     function startProxy() {
       var statsClient = new StatsClient('localhost:8125');
-      var monitor = new TargetMonitor(serviceRegistryClient, { disabled: true });
-      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, monitor);
+      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, tenantMgmtApi.href());
       proxy.listen(0, function(err) {
         if(err) {
           return done(err);
@@ -93,6 +102,7 @@ describe('Queries', function() {
           var hub = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });
           hubs.push(hub);
           hub.silent();
+          hub.use(redirect);
           hub.name('hub.' + i);
           hub.link(proxyUrl);
           hub.use(Led);
@@ -105,8 +115,7 @@ describe('Queries', function() {
             hub.runtime.pubsub.subscribe('_peer/connect', function() {
               hubsStarted++;
               if (hubsStarted === 2) {
-                etcd._trigger('/router/zetta', []);
-                done();
+                setTimeout(done, 10);
               }
             })
 

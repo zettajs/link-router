@@ -5,19 +5,18 @@ var zetta = require('zetta');
 var Led = require('zetta-led-mock-driver');
 var WebSocket = require('ws');
 var StatsClient = require('stats-client');
+var redirect = require('zetta-peer-redirect');
 
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
 var MockEtcd = require('./mocks/mock_etcd');
+var MockTenantMgmtApi = require('./mocks/tenant_mgmt_api');
+var RouterUpdater = require('./mocks/routing_updater');
 var VersionClient = require('../clients/version_client');
 var ServiceRegistryClient = require('../clients/service_registry_client');
 var RouterClient = require('../clients/router_client');
-var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
 var TestDriver = require('./mocks/example_driver');
-
-// Fix for Proxy subscribing to SIGs on every test
-process.setMaxListeners(0);
 
 function getBody(fn) {
   return function(res) {
@@ -43,14 +42,23 @@ describe('Event Streams', function() {
   var etcd = null;
   var devices = [];
   var validTopics = [];
+  var tenantMgmtApi = null;
+
+  beforeEach(function() {
+    etcd = new MockEtcd();
+  })
   
   beforeEach(function(done) {
-    etcd = new MockEtcd();
+    tenantMgmtApi = new MockTenantMgmtApi(etcd);
+    tenantMgmtApi.listen(0, done);
+  })
+  
+  beforeEach(function(done) {
 
     devices = [];
     validTopics = [];
 
-    etcd.set('/zetta/version', '{"version":"1"}');    
+    etcd.set('/zetta/version', '{"version":"1"}');
     var versionClient = new VersionClient({ client: etcd });
     var serviceRegistryClient = new ServiceRegistryClient({ client: etcd });
     var routerClient = new RouterClient({ client: etcd });
@@ -60,8 +68,8 @@ describe('Event Streams', function() {
     [0, 1].forEach(function(i) {
       var target = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });
       targets.push(target);
-
-      target.name('target.' + i)
+      target.use(RouterUpdater('', routerClient, serviceRegistryClient));
+      target.name('target.' + i);
       target.silent();
       
       target.listen(0, function(err) {
@@ -79,8 +87,7 @@ describe('Event Streams', function() {
     
     function startProxy() {
       var statsClient = new StatsClient('localhost:8125');
-      var monitor = new TargetMonitor(serviceRegistryClient, { disabled: true });
-      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, monitor);
+      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, tenantMgmtApi.href());
       proxy.listen(0, function(err) {
         if(err) {
           return done(err);
@@ -101,6 +108,7 @@ describe('Event Streams', function() {
           hub.silent();
           hub.name(hubName);
           hub.link(proxyUrl);
+          hub.use(redirect);
           hub.use(Led);
           hub.use(Led);
           hub.use(TestDriver);

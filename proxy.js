@@ -6,14 +6,13 @@ var async = require('async');
 var EventEmitter = require('events').EventEmitter;
 var RouterCache = require('./router_cache');
 var router = require('./routes/router');
-var TargetAllocation = require('./target_allocation');
 var getBody = require('./utils/get_body');
 
 var Proxy = module.exports = function(serviceRegistryClient,
                                       routerClient,
                                       versionClient,
                                       statsClient,
-                                      targetMonitor) {
+                                      tenantMgmtApi) {
 
   EventEmitter.call(this);
 
@@ -24,8 +23,7 @@ var Proxy = module.exports = function(serviceRegistryClient,
   this._currentVersion = null;
   this._routerCache = new RouterCache();
   this._servers = {};
-  this._targetMonitor = targetMonitor;
-  this._targetAllocation = new TargetAllocation(this);
+  this._tenantMgmtApi = tenantMgmtApi;
 
   this._spdyCache = { }; // <target>: spdyAgent 
 
@@ -130,8 +128,7 @@ Proxy.prototype.listen = function() {
 Proxy.prototype.activeTargets = function(tenantId) {
   var self = this;
   var activeServers = [];
-
-
+  
   // Get all target servers from routerCache
   this._routerCache.keys(tenantId).forEach(function(obj) {
     activeServers.push(self._routerCache.get(obj.tenantId, obj.targetName));
@@ -142,10 +139,7 @@ Proxy.prototype.activeTargets = function(tenantId) {
   }
   
   return this._servers[tenantId].filter(function(server) {
-    if (server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0) {
-      // Only return online servers
-      return self._targetMonitor.status(server.url);
-    }
+    return (server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0);
   });
 };
 
@@ -159,7 +153,7 @@ Proxy.prototype.targets = function(tenantId) {
   }
 
   return this._servers[tenantId].filter(function(server) {
-    return server.version === self._currentVersion && self._targetMonitor.status(server.url);
+    return server.version === self._currentVersion;
   });
 };
 

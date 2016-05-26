@@ -31,6 +31,7 @@
     "supertest": "^0.15.0",
     "zetta": "^1.0.0-beta.7",
     "zetta-led-mock-driver": "^0.10.0",
+    "zetta-peer-redirect": "^1.0.1",
     "zetta-photocell-mock-driver": "^0.9.0",
     "zrx": "^0.6.0"
   }
