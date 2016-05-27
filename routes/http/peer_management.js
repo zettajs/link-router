@@ -87,8 +87,10 @@ PeerManagement.prototype._locateConnectionIdTarget = function(tenantId, request,
       }
 
       return ret.json.entities.some(function(entity) {
-        cb(null, ret.server);
-        return (entity.properties.connectionId === connectionId);
+        if (entity.properties.connectionId === connectionId) {
+          cb(null, ret.server);
+          return true;
+        }
       });
     });
 

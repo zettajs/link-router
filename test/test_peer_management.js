@@ -202,7 +202,7 @@ describe('Peer Management API', function() {
           delLink = body.actions.filter(function(a) { return a.name === 'disconnect'; })[0].href;
         }))
         .end(function(err) {
-          if (err) done(err);
+          if (err) return done(err);
 
           var connectedAgain = false;
           hubs[0].runtime.pubsub.subscribe('_peer/disconnect', function(topic, data) {
