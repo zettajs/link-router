@@ -319,7 +319,7 @@ Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
 Proxy.prototype.getSpdyAgent = function(targetUrl) {
   var self = this;
   var parsed = url.parse(targetUrl);
-  var hash = parsed.hash; // hash = host.com:8080
+  var hash = parsed.host; // hash = host.com:8080
   
   if (this._spdyCache[hash]) {
     return this._spdyCache[hash];
