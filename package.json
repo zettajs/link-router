@@ -11,6 +11,7 @@
   "license": "MIT",
   "dependencies": {
     "async": "^1.4.2",
+    "aws-sdk": "^2.3.16",
     "caql": "^0.2.0",
     "caql-js-compiler": "^0.5.0",
     "lru-cache": "^2.7.1",

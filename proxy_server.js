@@ -1,3 +1,4 @@
+var AWS = require('aws-sdk');
 var Proxy = require('./proxy');
 var RouterClient = require('./clients/router_client');
 var ServiceRegistryClient = require('./clients/service_registry_client');
@@ -25,9 +26,33 @@ var routerClient = new RouterClient(opts);
 var versionClient = new VersionClient(opts);
 var statsdHost = process.env.COREOS_PRIVATE_IPV4 || 'localhost';
 var statsClient = new StatsClient(statsdHost + ':8125', {  routerHost: process.env.COREOS_PRIVATE_IPV4 });
+var jwtPlaintextKey = null;
 
-var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, tenantMgmtApi);
-proxy.listen(port, function() {
-  console.log('proxy listening on http://localhost:' + port);
-});
+if (!process.env.JWT_CIPHER_TEXT) {
+  startServer();
+} else {
+  console.log('Decrypting jwt key ' + process.env.JWT_CIPHER_TEXT);
+  var opts = {
+    CiphertextBlob: new Buffer(process.env.JWT_CIPHER_TEXT, 'hex'),
+    EncryptionContext: {
+      stackName: process.env.ZETTA_STACK
+    }
+  };
+  kms.decrypt(opts, function(err, data) {
+    if (err) {
+      throw err;
+    }
+
+    console.log(data);
+  });
+  
+  startServer();
+}
+
+function startServer() {
+  var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, tenantMgmtApi);
+  proxy.listen(port, function() {
+    console.log('proxy listening on http://localhost:' + port);
+  });
+}
 
