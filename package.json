@@ -14,6 +14,7 @@
     "aws-sdk": "^2.3.16",
     "caql": "^0.2.0",
     "caql-js-compiler": "^0.5.0",
+    "jsonwebtoken": "^7.0.0",
     "lru-cache": "^2.7.1",
     "minimatch": "^3.0.0",
     "moment": "^2.13.0",

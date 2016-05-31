@@ -12,7 +12,8 @@ var Proxy = module.exports = function(serviceRegistryClient,
                                       routerClient,
                                       versionClient,
                                       statsClient,
-                                      tenantMgmtApi) {
+                                      tenantMgmtApi,
+                                      jwtPlaintextKey) {
 
   EventEmitter.call(this);
 
@@ -24,6 +25,7 @@ var Proxy = module.exports = function(serviceRegistryClient,
   this._routerCache = new RouterCache();
   this._servers = {};
   this._tenantMgmtApi = tenantMgmtApi;
+  this.jwtPlaintextKey = jwtPlaintextKey;
 
   this._spdyCache = { }; // <target>: spdyAgent 
 

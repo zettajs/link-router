@@ -44,14 +44,20 @@ if (!process.env.JWT_CIPHER_TEXT) {
     }
   };
   kms.decrypt(opts, function(err, data) {
-    console.log(arguments);
+    if (err) {
+      console.error(err);
+      process.exit(1);
+      return;
+    }
+
+    jwtPlaintextKey = data.Plaintext.toString();
   });
   
   startServer();
 }
 
 function startServer() {
-  var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, tenantMgmtApi);
+  var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, tenantMgmtApi, jwtPlaintextKey);
   proxy.listen(port, function() {
     console.log('proxy listening on http://localhost:' + port);
   });

@@ -1,14 +1,17 @@
 var url = require('url');
 var path = require('path');
 var http = require('http');
+var jwt = require('jsonwebtoken');
 var getTenantId = require('./../../utils/get_tenant_id');
 var getBody = require('../../utils/get_body');
 
 var Peering = module.exports = function(proxy) {
   this._proxy = proxy;
+  this.jwtTokenLifeSec = 60; // seconds
 };
 
 Peering.prototype.handler = function(request, socket) {
+  var self = this;
   var tenantId = getTenantId(request);
 
   var parsed = url.parse(this._proxy._tenantMgmtApi);
@@ -28,7 +31,11 @@ Peering.prototype.handler = function(request, socket) {
       requestParsed.port = serverUrlParsed.port;
       requestParsed.protocol = serverUrlParsed.protocol;
       delete requestParsed.search;
-      requestParsed.query.jwt = '12345'; // jwt access token
+
+      if (proxy.jwtPlaintextKey) {
+        requestParsed.query.jwt = jwt.sign({ tenantId: tenantId, location: location }, proxy.jwtPlaintextKey , { expiresIn: self.jwtTokenLifeSec }); // jwt access token
+      }
+      
       response.headers.location = url.format(requestParsed);
     }
 
