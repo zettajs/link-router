@@ -33,7 +33,7 @@ if (!process.env.JWT_CIPHER_TEXT) {
   console.log('Starting without JWT')
   startServer();
 } else {
-  console.log('Decrypting jwt key ' + process.env.JWT_CIPHER_TEXT);
+  console.log('Decrypting jwt key');
   var opts = {
     CiphertextBlob: new Buffer(process.env.JWT_CIPHER_TEXT, 'hex'),
     EncryptionContext: {
@@ -41,11 +41,10 @@ if (!process.env.JWT_CIPHER_TEXT) {
     }
   };
   kms.decrypt(opts, function(err, data) {
+    console.log(arguments);
     if (err) {
       throw err;
     }
-
-    console.log(data);
   });
   
   startServer();
