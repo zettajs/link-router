@@ -1,4 +1,5 @@
 var AWS = require('aws-sdk');
+var kms = new AWS.KMS();
 var Proxy = require('./proxy');
 var RouterClient = require('./clients/router_client');
 var ServiceRegistryClient = require('./clients/service_registry_client');
