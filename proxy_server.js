@@ -1,5 +1,4 @@
 var AWS = require('aws-sdk');
-var kms = new AWS.KMS();
 var Proxy = require('./proxy');
 var RouterClient = require('./clients/router_client');
 var ServiceRegistryClient = require('./clients/service_registry_client');
@@ -34,6 +33,10 @@ if (!process.env.JWT_CIPHER_TEXT) {
   startServer();
 } else {
   console.log('Decrypting jwt key');
+
+  AWS.config.update({ region: process.env.AWS_REGION });
+  var kms = new AWS.KMS();
+  
   var opts = {
     CiphertextBlob: new Buffer(process.env.JWT_CIPHER_TEXT, 'hex'),
     EncryptionContext: {
@@ -42,9 +45,6 @@ if (!process.env.JWT_CIPHER_TEXT) {
   };
   kms.decrypt(opts, function(err, data) {
     console.log(arguments);
-    if (err) {
-      throw err;
-    }
   });
   
   startServer();
