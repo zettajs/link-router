@@ -29,6 +29,7 @@ var statsClient = new StatsClient(statsdHost + ':8125', {  routerHost: process.e
 var jwtPlaintextKey = null;
 
 if (!process.env.JWT_CIPHER_TEXT) {
+  console.log('Starting without JWT')
   startServer();
 } else {
   console.log('Decrypting jwt key ' + process.env.JWT_CIPHER_TEXT);
