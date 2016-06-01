@@ -30,6 +30,11 @@ var jwtPlaintextKey = null;
 
 if (!process.env.JWT_CIPHER_TEXT) {
   console.log('Starting without JWT')
+
+  if (process.env.JWT_PLAIN_TEXT) {
+    jwtPlaintextKey = process.env.JWT_PLAIN_TEXT;
+  }
+  
   startServer();
 } else {
   console.log('Decrypting jwt key');
