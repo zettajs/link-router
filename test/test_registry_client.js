@@ -1,5 +1,5 @@
 var assert = require('assert');
-var ServiceRegistryClient = require('../service_registry_client');
+var ServiceRegistryClient = require('../clients/service_registry_client');
 var MockEtcd = require('./mocks/mock_etcd');
 
 describe('Registry client', function() {

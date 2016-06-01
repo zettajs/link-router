@@ -1,7 +1,7 @@
 var Proxy = require('./proxy');
-var RouterClient = require('./router_client');
-var ServiceRegistryClient = require('./service_registry_client');
-var VersionClient = require('./version_client');
+var RouterClient = require('./clients/router_client');
+var ServiceRegistryClient = require('./clients/service_registry_client');
+var VersionClient = require('./clients/version_client');
 var StatsClient = require('stats-client');
 var MonitorService = require('./monitor/service');
 
@@ -28,25 +28,5 @@ var targetMonitor = new MonitorService(serviceRegistryClient, {
 var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, targetMonitor);
 proxy.listen(port, function() {
   console.log('proxy listening on http://localhost:' + port);
-});
-
-['SIGINT', 'SIGTERM'].forEach(function(signal) {
-  process.on(signal, function() {
-    
-    var count = proxy._peerSockets.length;
-    proxy._peerSockets.forEach(function(peer) {
-      routerClient.remove(peer.tenantId, peer.targetName, function() {
-        count--;
-        if (count === 0) {
-          process.exit();
-        }
-      })
-    });
-    
-    if (count === 0) {
-      process.exit();
-    }
-
-  });
 });
 

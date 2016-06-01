@@ -6,11 +6,14 @@ var StatsClient = require('stats-client');
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
 var MockEtcd = require('./mocks/mock_etcd');
-var VersionClient = require('../version_client');
-var ServiceRegistryClient = require('../service_registry_client');
-var RouterClient = require('../router_client');
+var VersionClient = require('../clients/version_client');
+var ServiceRegistryClient = require('../clients/service_registry_client');
+var RouterClient = require('../clients/router_client');
 var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
+
+// Fix for Proxy subscribing to SIGs on every test
+process.setMaxListeners(0);
 
 describe('Proxy Connection', function() {
   var hub = null;

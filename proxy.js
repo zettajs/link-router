@@ -1,54 +1,37 @@
-var http = require('http');
 var url = require('url');
+var http = require('http');
 var util = require('util');
-var path = require('path');
+var spdy = require('spdy');
+var async = require('async');
 var EventEmitter = require('events').EventEmitter;
-var Rels = require('zetta-rels');
-var WsQueryHandler = require('./query_ws_handler.js');
-var HttpQueryHandler = require('./query_http_handler.js');
-var PeerManagementHandler = require('./peer_management_handler');
-var TargetAllocation = require('./target_allocation');
-var RouterStateHandler = require('./proxy_state_handler');
-var WsEventStreamHandler = require('./event_stream_ws_handler');
-var parseUri = require('./parse_uri');
-var joinUri = require('./join_uri');
-var getBody = require('./get_body');
-var getTenantId = require('./get_tenant_id');
-var confirmWs = require('./confirm_ws');
-var statusCode = require('./status_code');
-var sirenResponse = require('./siren_response');
 var RouterCache = require('./router_cache');
-var ws = require('ws');
+var router = require('./routes/router');
+var TargetAllocation = require('./target_allocation');
+var getBody = require('./utils/get_body');
 
-function parseSubscription(hash) {
-  var arr = hash.split(':');
-  return {
-    tenantId: decodeURIComponent(arr[0]),
-    targetName: decodeURIComponent(arr[1]),
-    targetHost: decodeURIComponent(arr[2]),
-    url: decodeURIComponent(arr[3])
-  };
-}
-
-var Proxy = module.exports = function(serviceRegistryClient, routerClient, versionClient, statsClient, targetMonitor) {
+var Proxy = module.exports = function(serviceRegistryClient,
+                                      routerClient,
+                                      versionClient,
+                                      statsClient,
+                                      targetMonitor) {
 
   EventEmitter.call(this);
-  var self = this;
+
   this._serviceRegistryClient = serviceRegistryClient;
   this._routerClient = routerClient;
   this._versionClient = versionClient;
   this._statsClient = statsClient;
   this._currentVersion = null;
-  this._server = http.createServer();
   this._routerCache = new RouterCache();
-  this._cache = {};
-  this._subscriptions = {};
   this._servers = {};
-  this._peerSockets = [];
   this._targetMonitor = targetMonitor;
   this._targetAllocation = new TargetAllocation(this);
 
+  this._spdyCache = { }; // <target>: spdyAgent 
+
   this.peerActivityTimeout = 60000;
+
+  this._server = http.createServer();
 
   this._setup();
 };
@@ -57,67 +40,8 @@ util.inherits(Proxy, EventEmitter);
 Proxy.prototype._setup = function() {
   var self = this;
 
-  var wsQueryHandler = new WsQueryHandler(this);
-  var httpQueryHandler = new HttpQueryHandler(this);
-  var routerStateHandler= new RouterStateHandler(this);
-  var peerManagementHandler = new PeerManagementHandler(this);
-  var wsEventStreamHandler = new WsEventStreamHandler(this);
-
-  this._server.on('upgrade', function(request, socket) {
-
-    socket.allowHalfOpen = false;
-
-    if (/^\/peers\//.test(request.url)) {
-      self._proxyPeerConnection(request, socket);
-    } else {
-      var receiver = new ws.Receiver();
-      socket.on('data', function(buf) {
-        receiver.add(buf);
-      });
-
-      // request from client to close websocket
-      receiver.onclose = function(code, data, flags) {
-        socket.end();
-      };
-
-      // handle ping requests
-      receiver.onping = function(data, flags) {
-        var sender = new ws.Sender(socket);
-        sender.pong(data, { binary: flags.binary === true }, true);
-      };
-
-      socket.once('close', function() {
-        receiver.cleanup();
-      });
-
-      if (/^\/events\?/.test(request.url)) {
-        wsQueryHandler.wsQuery(request, socket, receiver);
-      } else if (request.url === '/events') {
-        wsEventStreamHandler.connection(request, socket, receiver);
-      } else if (/^\/peer-management/.test(request.url)) {
-        peerManagementHandler.routeWs(request, socket, receiver);
-      } else {
-        self._proxyEventSubscription(request, socket, receiver);
-      }
-    }
-  });
-
-  this._server.on('request', function(request, response) {
-    var parsed = url.parse(request.url, true);
-    if (parsed.pathname === '/') {
-      if (parsed.query.ql) {
-        httpQueryHandler.serverQuery(request, response, parsed);
-      } else {
-        self._serveRoot(request, response);
-      }
-    } else if (parsed.pathname === '/state') {
-      routerStateHandler.request(request, response);
-    } else if (/^\/peer-management/.test(request.url)) {
-      peerManagementHandler.routeHttp(request, response, parsed);
-    } else {
-      self._proxyRequest(request, response);
-    }
-  });
+  // Setup http/ws routes
+  router(this);
 
   this._versionClient.on('change', function(versionObject) {
     self._currentVersion = versionObject.version;
@@ -140,7 +64,6 @@ Proxy.prototype._setup = function() {
       self._routerCache.set(obj.tenantId, obj.name, obj.url);
     });
     
-    self._disconnectStaleWsClients();
     self.emit('router-update', self._routerCache);
   });
 
@@ -152,34 +75,6 @@ Proxy.prototype._setup = function() {
   this._loadServers(function() {
     self.emit('services-update');
   });
-
-
-  setInterval(function() {
-    var counts = {};
-    self._peerSockets.forEach(function(peerObj) {
-      if (!counts[peerObj.tenantId]) {
-        counts[peerObj.tenantId] = 0;
-      }
-      counts[peerObj.tenantId]++;
-    });
-
-    Object.keys(counts).forEach(function(tenant) {
-      self._statsClient.gauge('ws.peers', counts[tenant], { tenant: tenant });
-    });
-
-    var wsCounts = {};
-    Object.keys(self._subscriptions).forEach(function(topicHash) {
-      var parsed = parseSubscription(topicHash);
-      if (!wsCounts[parsed.tenantId]) {
-        wsCounts[parsed.tenantId] = 0;
-      }
-      wsCounts[parsed.tenantId]++;
-    });
-    Object.keys(wsCounts).forEach(function(tenant) {
-      self._statsClient.gauge('ws.event', wsCounts[tenant], { tenant: tenant });
-    });
-
-  }, 5000);
 
 };
 
@@ -226,433 +121,9 @@ Proxy.prototype._loadServers = function(cb) {
   });
 };
 
-Proxy.prototype._next = function(tenantId, cb) {
-  var self = this;
-  return this._targetAllocation.lookup(tenantId, cb);
-}
-
-Proxy.prototype._proxyPeerConnection = function(request, socket) {
-  var self = this;
-  var parsed = url.parse(request.url, true);
-  var targetName;
-  var tenantId = getTenantId(request);
-
-  var match = /^\/peers\/(.+)$/.exec(request.url);
-  if (match) {
-    targetName = decodeURIComponent(/^\/peers\/(.+)$/.exec(parsed.pathname)[1]);
-  }
-
-  socket.on('error', function(err) {
-    console.error('Peer Socket Error:', tenantId, targetName, err);
-  });
-
-  self._statsClient.increment('http.req.peer', { tenant: tenantId });
-
-  this._routerClient.get(tenantId, targetName, function(err, peer) {
-    if (err && (!err.error || err.error.errorCode !== 100) ) {
-      socket.end('HTTP/1.1 500 Server Error\r\n\r\n\r\n');
-      self._statsClient.increment('http.req.peer.status.5xx', { tenant: tenantId });
-      return;
-    }
-    
-    if (peer) {
-      socket.end('HTTP/1.1 409 Peer Conflict\r\n\r\n\r\n');
-      self._statsClient.increment('http.req.peer.status.4xx', { tenant: tenantId });
-      return;
-    }
-    
-    self._next(tenantId, function(err, serverUrl) {
-      if(err) {
-        console.error('Peer Socket Failed to allocated target:', err);
-        socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
-        self._statsClient.increment('http.req.peer.status.5xx', { tenant: tenantId });
-        return;
-      }
-
-      if (!serverUrl) {
-        socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n\r\n');
-        self._statsClient.increment('http.req.peer.status.5xx', { tenant: tenantId });
-        return;
-      }
-
-      var server = url.parse(serverUrl);
-
-      var options = {
-        method: request.method,
-        headers: request.headers,
-        hostname: server.hostname,
-        port: server.port,
-        path: parsed.path
-      };
-
-      var target = http.request(options);
-
-      // Handle non 101 responses from target
-      target.on('response', function(targetResponse) {
-        var code = targetResponse.statusCode;
-        var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
-        var headers = Object.keys(targetResponse.headers).map(function(header) {
-          return header + ': ' + targetResponse.headers[header];
-        });
-
-        socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
-        targetResponse.pipe(socket);
-      });
-      
-      target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
-        var timer = null;
-        var code = targetResponse.statusCode;
-        var peerObj = { tenantId: tenantId,
-                        targetName: targetName,
-                        upgradeSocket: upgradeSocket,
-                        socket: socket
-                      };
-
-        var cleanup = function() {
-          clearInterval(timer);          
-          var idx = self._peerSockets.indexOf(peerObj);
-          if (idx >= 0) {
-            self._peerSockets.splice(idx, 1);
-          }
-          self._routerClient.remove(tenantId, targetName, function(err) {}); 
-        };
-
-        self._statsClient.increment('http.req.peer.status.1xx', { tenant: tenantId });
-
-        var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
-        var headers = Object.keys(targetResponse.headers).map(function(header) {
-          return header + ': ' + targetResponse.headers[header];
-        });
-
-        upgradeSocket.on('error', function(err) {
-          console.error('Target Socket Error:', tenantId, targetName, err);
-          cleanup();
-        });
-        upgradeSocket.on('timeout', function() {
-          console.error('Target Socket Timeout:', tenantId, targetName);
-          upgradeSocket.destroy();
-          socket.end();
-        });
-        upgradeSocket.setTimeout(self.peerActivityTimeout);
-
-        socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
-        upgradeSocket.pipe(socket).pipe(upgradeSocket);
-
-        socket.on('close', cleanup);
-        upgradeSocket.on('close', cleanup);
-
-        if (code === 101) {
-          self._peerSockets.push(peerObj);
-          self._routerClient.add(tenantId, targetName, serverUrl, function(err) {});
-          timer = setInterval(function() {
-            self._routerClient.add(tenantId, targetName, serverUrl, function(err) {});
-          }, 60000);
-        } else {
-          socket.end();
-        }
-      });
-
-      target.on('error', function() {
-        var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
-        socket.end(responseLine);
-        self._statsClient.increment('http.req.peer.status.5xx', { tenant: tenantId });
-      });
-
-      request.pipe(target);
-    });
-
-
-  });
-};
-
 Proxy.prototype.listen = function() {
   this._server.listen.apply(this._server, Array.prototype.slice.call(arguments));
 };
-
-// disconnects client ws where the hub no longer exists or 
-// exists on a different target server
-Proxy.prototype._disconnectStaleWsClients = function() {
-  var self = this;
-
-  // make sure target exists in router and is the same as what is subscribed to
-  Object.keys(this._cache).forEach(function(hash) {
-    var obj = parseSubscription(hash);
-    var serverUrl = self._routerCache.get(obj.tenantId, obj.targetName);
-    if (serverUrl === undefined || serverUrl !== obj.targetHost) {
-      // end subscription to zetta target, will close all clients
-      self._cache[hash].end();
-    }
-  });
-};
-
-Proxy.prototype._proxyEventSubscription = function(request, socket) {
-  var self = this;
-  var parsed = url.parse(request.url, true);
-  var targetName;
-  var tenantId = getTenantId(request);
-
-  var match = /^\/servers\/(.+)$/.exec(request.url);
-  if (match) {
-    targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
-  } else {
-    self._statsClient.increment('http.req.event.status.4xx', { tenant: tenantId });
-    var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
-    socket.end(responseLine);
-    return;
-  }
-
-  this.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
-    if (err) {
-      self._statsClient.increment('http.req.event.status.5xx', { tenant: tenantId });
-      var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
-      socket.end(responseLine);
-      return;
-    }
-
-    if (!serverUrl) {
-      self._statsClient.increment('http.req.event.status.4xx', { tenant: tenantId });
-      var responseLine = 'HTTP/1.1 404 Server Not Found\r\n\r\n\r\n';
-      socket.end(responseLine);
-      return;
-    }
-
-    var urlHash = [tenantId, targetName, serverUrl, request.url].map(encodeURIComponent).join(':');
-    if (!self._subscriptions.hasOwnProperty(urlHash)) {
-      self._subscriptions[urlHash] = [];
-    }
-
-    socket.on('error', function(err) {
-      console.error('Client Socket Error:', tenantId, targetName, err);
-    });
-
-    function removeSocketFromCache() {
-      var idx = self._subscriptions[urlHash].indexOf(socket);
-      if (idx >= 0) {
-        self._subscriptions[urlHash].splice(idx, 1);
-      }
-      
-      if (self._subscriptions[urlHash].length === 0) {
-        if (self._cache[urlHash]) {
-          self._cache[urlHash].end();
-        }
-        delete self._subscriptions[urlHash];
-        delete self._cache[urlHash];
-      }
-    }
-
-    var cleanup = function() {};
-
-    socket.on('close', function() {
-      cleanup();
-    });
-
-    if (self._cache.hasOwnProperty(urlHash)) {
-      confirmWs(request, socket);
-      self._subscriptions[urlHash].push(socket);
-      self._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
-      cleanup = function() {
-        removeSocketFromCache();
-      };
-
-      return;
-    }
-
-    var server = url.parse(serverUrl);
-    var options = {
-      method: request.method,
-      headers: request.headers,
-      hostname: server.hostname,
-      port: server.port,
-      path: parsed.path
-    };
-
-    var target = http.request(options);
-
-    cleanup = function () {
-      target.abort();
-    };
-
-    target.on('upgrade', function(targetResponse, upgradeSocket, upgradeHead) {
-      var code = targetResponse.statusCode;
-      var responseLine = 'HTTP/1.1 ' + code + ' ' + http.STATUS_CODES[code];
-      var headers = Object.keys(targetResponse.headers).map(function(header) {
-        return header + ': ' + targetResponse.headers[header];
-      });
-
-      self._statsClient.increment('http.req.event.status.1xx', { tenant: tenantId });
-      socket.write(responseLine + '\r\n' + headers.join('\r\n') + '\r\n\r\n');
-
-      self._cache[urlHash] = upgradeSocket;
-      self._subscriptions[urlHash].push(socket);
-
-      cleanup = function() {
-        removeSocketFromCache();
-      };
-
-      upgradeSocket.on('data', function(data) {
-        if (self._subscriptions[urlHash]) {
-          self._subscriptions[urlHash].forEach(function(socket) {
-            socket.write(data);
-          });
-        }
-      });
-
-      upgradeSocket.on('close', function() {
-        delete self._cache[urlHash];
-        if (self._subscriptions[urlHash]) {
-          self._subscriptions[urlHash].forEach(function(socket) {
-            socket.end();
-          });
-        }
-      });
-
-      upgradeSocket.on('error', function(err) {
-        console.error('Target Ws Socket Error:', tenantId, targetName, err);
-      });
-    });
-
-    target.on('error', function() {
-      var responseLine = 'HTTP/1.1 500 Internal Server Error\r\n\r\n\r\n';
-      socket.end(responseLine);
-    });
-
-    request.pipe(target);
-  });
-};
-
-Proxy.prototype._proxyRequest = function(request, response) {
-  var self = this;
-  var parsed = url.parse(request.url, true);
-  var targetName;
-  var tenantId = getTenantId(request);
-  
-  var startTime = new Date().getTime();
-
-  var match = /^\/servers\/(.+)$/.exec(request.url);
-  if (match) {
-    targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
-  } else {
-    self._statsClient.increment('http.req.proxy.status.4xx', { tenant: tenantId });
-    response.statusCode = 404;
-    response.end();
-    return;
-  }
-  
-  this.lookupPeersTarget(tenantId, targetName, function(err, serverUrl) {
-    if (err) {
-      self._statsClient.increment('http.req.proxy.status.4xx', { tenant: tenantId });
-      response.statusCode = 404;
-      response.end();
-      return;
-    }
-
-    var server = url.parse(serverUrl);
-
-
-    var options = {
-      method: request.method,
-      headers: request.headers,
-      hostname: server.hostname,
-      port: server.port,
-      path: parsed.path
-    };
-
-    var target = http.request(options);
-
-    // close target req if client is closed before target finishes
-    response.on('close', function() {
-      target.abort();
-    });
-
-    target.on('response', function(targetResponse) {
-      response.statusCode = targetResponse.statusCode;
-
-      Object.keys(targetResponse.headers).forEach(function(header) {
-        response.setHeader(header, targetResponse.headers[header]);
-      });
-
-      var duration = new Date().getTime() - startTime;
-      self._statsClient.timing('http.req.proxy', duration, { tenant: tenantId, targetName: targetName });
-      self._statsClient.increment('http.req.proxy.status.' + statusCode(response.statusCode), { tenant: tenantId, targetName: targetName });
-
-      targetResponse.pipe(response);
-    });
-
-    target.on('error', function() {
-      self._statsClient.increment('http.req.proxy.status.5xx', { tenant: tenantId, targetName: targetName });
-      response.statusCode = 500;
-      response.end();
-    });
-
-    request.pipe(target);    
-  });
-};
-
-Proxy.prototype._serveRoot = function(request, response) {
-  var self = this;
-  var tenantId = getTenantId(request);
-
-  var startTime = new Date().getTime();
-
-  var body = {
-    class: ['root'],
-    links: [
-      {
-        rel: ['self'],
-        href: parseUri(request)
-      },
-      {
-        rel: [ Rels.peerManagement ],
-        href: joinUri(request, '/peer-management')
-      },
-      {
-        rel: [ Rels.events ],
-        href: joinUri(request, '/events').replace(/^http/,'ws')
-      }
-    ]
-  };
-
-  var clientAborted = false;
-  request.on('close', function() {
-    clientAborted = true;
-  });
-
-  var entities = this._routerClient.findAll(tenantId, function(err, results) {
-    if (clientAborted) {
-      return;
-    }
-
-    if (results) {
-      results.forEach(function(peer) {
-        body.links.push({
-          title: peer.name,
-          rel: [Rels.peer, Rels.server],
-          href: joinUri(request, '/servers/' + peer.name)
-        });
-      });
-    }
-
-    body.actions = [
-      { 
-        name: 'query-devices',
-        method: 'GET',
-        href: parseUri(request),
-        type: 'application/x-www-form-urlencoded',
-        fields: [
-          { name: 'server', type: 'text' },
-          { name: 'ql', type: 'text' }
-        ]
-      }
-    ];
-
-    var duration = new Date().getTime()-startTime;
-    self._statsClient.timing('http.req.root', duration, { tenant: tenantId });
-    self._statsClient.increment('http.req.root.status.2xx', { tenant: tenantId });
-
-    sirenResponse(response, 200, body);
-  });
-};
-
 
 // Return all targets for a tenantId with the current active version and any targets that have
 // peers currently connected.
@@ -709,3 +180,176 @@ Proxy.prototype.lookupPeersTarget = function(tenantId, targetName, cb) {
     cb(null, serverUrl);
   }
 }
+
+Proxy.prototype.proxyToTarget = function(targetUrl, request, response, options) {
+  var parsed = url.parse(targetUrl);
+
+  if (options === undefined) {
+    options = {};
+  }
+
+  var httpOptions = {
+    hostname: parsed.hostname,
+    port: parsed.port,
+    agent: this.getSpdyAgent(targetUrl),
+    
+    method: options.method || request.method,
+    headers: options.headers || request.headers,
+    path: options.path || request.url
+  };
+
+  // If no forwarded protocol then we must set http because zetta will
+  // set the ws urls to spdy.
+  if (!httpOptions.headers.hasOwnProperty('x-forwarded-proto')) {
+    httpOptions.headers['x-forwarded-proto'] = 'http';
+  }
+  
+  var target = http.request(httpOptions);
+
+  if (options.timeout) {
+    target.setTimeout(options.timeout, function() {
+      target.abort();
+      response.statusCode = 500;
+      response.end();
+    });
+  }
+
+  // close target req if client is closed before target finishes
+  response.on('close', function() {
+    target.abort();
+  });
+
+  target.on('response', function(targetResponse) {
+    response.statusCode = targetResponse.statusCode;
+
+    Object.keys(targetResponse.headers).forEach(function(header) {
+      response.setHeader(header, targetResponse.headers[header]);
+    });
+
+    targetResponse.pipe(response);
+  });
+
+  target.on('error', function() {
+    response.statusCode = 500;
+    response.end();
+  });
+
+  request.pipe(target);
+};
+
+// Preform same request on all active targets for a tenant, get body from each target and
+// return to callback.
+Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
+  var self = this;
+  
+  // If tenantId is string get active servers, allow servers to be overiden with array of urls 
+  if (Array.isArray(tenantId)) {
+    var servers = tenantId;
+  } else {
+    var servers = this.activeTargets(tenantId).map(function(v) { return v.url; });
+  }
+
+  servers = servers.map(url.parse);
+
+  if (typeof options === 'function') {
+    cb = options;
+    options = {};
+  }
+
+  var pending = [];
+  async.mapLimit(servers, (options.asyncLimit || 5), function(parsed, next) {
+    var httpOptions = {
+      hostname: parsed.hostname,
+      port: parsed.port,
+      agent: self.getSpdyAgent(url.format(parsed)),
+      
+      method: options.method || request.method,
+      headers: options.headers || request.headers,
+      path: options.path || request.url
+    };
+
+    // When specifing array of urls optionally use path on each array entry not request or option path
+    if (options.useServersPath) {
+      httpOptions.path = parsed.path;
+    }
+
+    var target = http.request(httpOptions);
+    pending.push(target);
+
+    if (options.timeout) {
+      target.setTimeout(options.timeout, function() {
+        target.abort();
+        next(null, { err: new Error('Request to target timed out.') });
+      });
+    }
+
+    target.on('response', function(targetResponse) {
+      getBody(targetResponse, function(err, body) {
+        if (err) {
+          return next(null, { server: url.format(parsed), err: err });
+        }
+        
+        var json = null;
+        try {
+          json = JSON.parse(body.toString());
+        } catch (err) {
+          return next(null, { server: url.format(parsed), err: err });
+        }
+
+        next(null, { server: url.format(parsed), res: targetResponse, json: json } );
+      });
+    });
+
+    target.on('error', function(err) {
+      next(null, { server: url.format(parsed), err: err });
+    });
+
+    target.end();    
+  }, function(err, results) {
+    if (err) {
+      pending.forEach(function(req) {
+        req.abort();
+      });
+      return cb(err);
+    }
+    return cb(null, results);
+  });
+};
+
+Proxy.prototype.getSpdyAgent = function(targetUrl) {
+  var self = this;
+  var parsed = url.parse(targetUrl);
+  var hash = parsed.host; // hash = host.com:8080
+  
+  if (this._spdyCache[hash]) {
+    return this._spdyCache[hash];
+  }
+
+  this._spdyCache[hash] = spdy.createAgent({
+    host: parsed.hostname,
+    port: parsed.port,
+
+    // Optional SPDY options
+    spdy: {
+      plain: true,
+      ssl: false,
+      protocols: ['spdy/3.1']
+    }
+  }).once('error', function (err) {
+    delete self._spdyCache[hash];
+  });
+  
+  var em = this._spdyCache[hash]._spdyState.connection.socket;
+
+  em.once('close', function() {
+    delete self._spdyCache[hash];
+  });
+  
+  em.once('error', function() {
+    delete self._spdyCache[hash];
+  });
+
+
+  return this._spdyCache[hash];
+};
+

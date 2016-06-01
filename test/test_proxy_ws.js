@@ -9,11 +9,14 @@ var WebSocket = require('ws');
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
 var MockEtcd = require('./mocks/mock_etcd');
-var VersionClient = require('../version_client');
-var ServiceRegistryClient = require('../service_registry_client');
-var RouterClient = require('../router_client');
+var VersionClient = require('../clients/version_client');
+var ServiceRegistryClient = require('../clients/service_registry_client');
+var RouterClient = require('../clients/router_client');
 var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
+
+// Fix for Proxy subscribing to SIGs on every test
+process.setMaxListeners(0);
 
 describe('Proxy Websockets', function() {
   var hub = null;
@@ -135,6 +138,7 @@ describe('Proxy Websockets', function() {
             done();
           })
         });
+        
       });  
   })
 
@@ -142,22 +146,28 @@ describe('Proxy Websockets', function() {
   it('ws should not disconnect after etcd router updates', function(done) {
     var count = 0;
     var c = zrx()
-      .load(proxyUrl)
-      .peer('hub.1')
-      .device(function(d) { return d.type === 'photocell'; })
-      .stream('intensity')
-      .subscribe(function() {
-        if (count === 0) {
-          count++;
-          etcd._trigger('/router/zetta', []);        
-          setTimeout(function() {
-            assert.equal(Object.keys(proxy._cache).length, 1);
-            done();
-          }, 10);
-        }
-      });
+        .load(proxyUrl)
+        .peer('hub.1')
+        .device(function(d) { return d.type === 'photocell'; })
+        .stream('intensity')
+        .subscribe(function(data) {
+          c.dispose();
+          if (count === 0) {
+            var wsUrl = proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?topic=' + data.topic;
+            var ws = new WebSocket(wsUrl);
+            ws.on('open', function open() {
+              etcd._trigger('/router/zetta', []);        
+              setTimeout(function() {
+                assert.equal(ws.readyState, WebSocket.OPEN);
+                done();
+              }, 10);
+            });
+            
+            count++;
+          }
+        });
   })
-
+  
   it('second ws client connecting should continue to recv data after first client disconnects', function(done) {
     var createClient = function(cb) {
       return zrx()
@@ -185,25 +195,58 @@ describe('Proxy Websockets', function() {
     }, 200)
   });
 
-  it('it should disconnect ws if peer disconnects', function(done) {
-    var once = false;
-    var c = zrx()
-      .load(proxyUrl)
-      .peer('hub.1')
-      .device(function(d) { return d.type === 'photocell'; })
-      .stream('intensity')
-      .subscribe(function() {
-        if (!once) {
-          proxy._routerClient.emit('change', []);
-          setTimeout(function() {
-            assert.equal(Object.keys(proxy._cache).length, 0);
-            assert.equal(Object.keys(proxy._subscriptions).length, 0);
-            done();
-          }, 15)
-          once = true;
-        }
-      });
+
+  it('two ws clients with the same query but different hubs should receive the correct hubs data', function(done) {
+
+    var hub2 = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() })
+      .name('hub.2')
+      .silent()
+      .link(proxyUrl)
+      .use(Photocell)
+      .listen(0, function() {
+
+        var id1 = Object.keys(hub.runtime._jsDevices)[0];
+        var id2 = Object.keys(hub2.runtime._jsDevices)[0];
+
+        var called = false;
+        hub2.pubsub.subscribe('_peer/connect', function(topic, data) {
+          if (!called) {
+            called = true;
+
+            var topic = 'photocell/*/intensity'
+            var ws1 = new WebSocket(proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?topic=' + topic);
+            var ws2 = new WebSocket(proxyUrl.replace('http', 'ws') + '/servers/hub.2/events?topic=' + topic);
+
+            var received1 = false;
+            var received2 = false;
+            ws1.on('open', function open() {
+              ws1.on('message', function(data) {
+                assert.equal(data.indexOf(id2), -1);
+                assert(data.indexOf(id1) >= 0);
+                received1 = true;
+                if (received1 && received2) {
+                  done();
+                  done = function(){};
+                }
+              })
+            });
+
+            ws2.on('open', function open() {
+              ws2.on('message', function(data) {
+                assert.equal(data.indexOf(id1), -1);
+                assert(data.indexOf(id2) >= 0);
+                received2 = true;
+                if (received1 && received2) {
+                  done();
+                  done = function(){};
+                }
+              })
+            });
+          }
+        });
+      })    
   });
 
+  
 
 });

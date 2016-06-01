@@ -1,5 +1,5 @@
 var assert = require('assert');
-var RouterClient = require('./../router_client');
+var RouterClient = require('../clients/router_client');
 var MockEtcd = require('./mocks/mock_etcd');
 
 describe('Router client', function() {

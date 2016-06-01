@@ -10,11 +10,14 @@ var StatsClient = require('stats-client');
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
 var MockEtcd = require('./mocks/mock_etcd');
-var VersionClient = require('../version_client');
-var ServiceRegistryClient = require('../service_registry_client');
-var RouterClient = require('../router_client');
+var VersionClient = require('../clients/version_client');
+var ServiceRegistryClient = require('../clients/service_registry_client');
+var RouterClient = require('../clients/router_client');
 var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
+
+// Fix for Proxy subscribing to SIGs on every test
+process.setMaxListeners(0);
 
 function getBody(fn) {
   return function(res) {
@@ -199,7 +202,7 @@ describe('Peer Management API', function() {
           delLink = body.actions.filter(function(a) { return a.name === 'disconnect'; })[0].href;
         }))
         .end(function(err) {
-          if (err) done(err);
+          if (err) return done(err);
 
           var connectedAgain = false;
           hubs[0].runtime.pubsub.subscribe('_peer/disconnect', function(topic, data) {
@@ -236,7 +239,7 @@ describe('Peer Management API', function() {
   })
 
   describe('WS API', function() {
-    it('should receive disconnect message', function(done) {
+    it('should receive disconnect message when peer disconnects', function(done) {
       var ws = new WebSocket(proxyUrl + '/peer-management');
       ws.on('open', function() {
         setTimeout(function() {
@@ -244,7 +247,6 @@ describe('Peer Management API', function() {
         }, 200);
       });
       ws.on('message', function(msg) {
-        console.log(msg)
         var json = JSON.parse(msg);
         if (json.topic === '_peer/disconnect') {
           assert.equal(json.data.id, 'hub.0');
@@ -253,14 +255,13 @@ describe('Peer Management API', function() {
       });
     })
 
-    it('should disconnect if not the right url', function(done) {
+    it('should receive a 404 if not the right url', function(done) {
       var ws = new WebSocket(proxyUrl + '/peer-management/12');
-      ws.on('close', function(code) {
-        assert.equal(code, 1001);
+      ws.on('error', function(err) {
+        assert.equal(err.message, 'unexpected server response (404)');
         done();
-      });
+      })
     })
-
 
   })
   
