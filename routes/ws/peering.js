@@ -33,9 +33,9 @@ Peering.prototype.handler = function(request, socket) {
       delete requestParsed.search;
 
 
-      if (self._proxy.jwtPlaintextKey) {
+      if (self._proxy.jwtPlaintextKeys) {
         var token = { tenantId: tenantId, location: response.headers.location };
-        requestParsed.query.jwt = jwt.sign(token, self._proxy.jwtPlaintextKey, { expiresIn: self.jwtTokenLifeSec }); // jwt access token
+        requestParsed.query.jwt = jwt.sign(token, self._proxy.jwtPlaintextKeys.external, { expiresIn: self.jwtTokenLifeSec }); // jwt access token
       }
 
       response.headers.location = url.format(requestParsed);

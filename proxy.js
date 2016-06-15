@@ -3,6 +3,7 @@ var http = require('http');
 var util = require('util');
 var spdy = require('spdy');
 var async = require('async');
+var jwt = require('jsonwebtoken');
 var EventEmitter = require('events').EventEmitter;
 var RouterCache = require('./router_cache');
 var router = require('./routes/router');
@@ -13,7 +14,7 @@ var Proxy = module.exports = function(serviceRegistryClient,
                                       versionClient,
                                       statsClient,
                                       tenantMgmtApi,
-                                      jwtPlaintextKey) {
+                                      jwtPlaintextKeys) {
 
   EventEmitter.call(this);
 
@@ -25,7 +26,7 @@ var Proxy = module.exports = function(serviceRegistryClient,
   this._routerCache = new RouterCache();
   this._servers = {};
   this._tenantMgmtApi = tenantMgmtApi;
-  this.jwtPlaintextKey = jwtPlaintextKey;
+  this.jwtPlaintextKeys = jwtPlaintextKeys;
 
   this._spdyCache = { }; // <target>: spdyAgent 
 
@@ -199,6 +200,9 @@ Proxy.prototype.proxyToTarget = function(targetUrl, request, response, options) 
   if (!httpOptions.headers.hasOwnProperty('x-forwarded-proto')) {
     httpOptions.headers['x-forwarded-proto'] = 'http';
   }
+
+  // If needed add jwt to headers
+  this.addTokenToReqOptions(httpOptions, targetUrl);
   
   var target = http.request(httpOptions);
 
@@ -264,6 +268,9 @@ Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
       path: options.path || request.url
     };
 
+    // If needed add jwt to headers
+    self.addTokenToReqOptions(httpOptions, url.format(parsed));
+
     // When specifing array of urls optionally use path on each array entry not request or option path
     if (options.useServersPath) {
       httpOptions.path = parsed.path;
@@ -310,6 +317,21 @@ Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
     }
     return cb(null, results);
   });
+};
+
+Proxy.prototype.addTokenToReqOptions = function(options, targetUrl) {
+  if (!this.jwtPlaintextKeys) {
+    return;
+  }
+  
+  var token = { location: targetUrl };
+  var cipher = jwt.sign(token, this.jwtPlaintextKeys.internal, { expiresIn: 60 });
+
+  if (!options.headers) {
+    options.headers = {};
+  }
+  
+  options.headers['x-apigee-iot-jwt'] = cipher;
 };
 
 Proxy.prototype.getSpdyAgent = function(targetUrl) {

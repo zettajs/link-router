@@ -107,6 +107,9 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
     path: parsed.path
   };
 
+  // Add jwt token if needed
+  this.proxy.addTokenToReqOptions(options, target.url);
+
   cache.targets[target.url] = null;
 
   var req = http.request(options);
