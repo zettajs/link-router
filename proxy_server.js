@@ -56,9 +56,8 @@ if (!process.env.JWT_CIPHER_TEXT) {
     }
 
     jwtPlaintextKey = data.Plaintext.toString();
+    startServer();
   });
-  
-  startServer();
 }
 
 function startServer() {
