@@ -17,6 +17,7 @@
     "minimatch": "^3.0.0",
     "moment": "^2.13.0",
     "node-etcd": "^3.0.2",
+    "node-uuid": "^1.4.7",
     "rx": "^2.3.25",
     "spdy": "^1.32.5",
     "stats-client": "^0.2.0",
