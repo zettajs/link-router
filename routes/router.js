@@ -91,7 +91,7 @@ module.exports = function(proxy) {
       { regex: /^\/events$/, route: wsMultiplexedEvents }, // /events for multiplexed
       { regex: /^\/peer-management$/, route: wsEvents }, // /peer-management
       { regex: /^\/events\?/, route: wsEvents }, // /events?topic=
-      { regex: /^\/servers\/(.+)$/, route: wsEvents }, // /servers/<hub>/events?topic=
+      { regex: /^\/servers\/(.+)$/, route: wsMultiplexedEvents }, // /servers/<hub>/events?topic=
     ];
 
     var found = routes.some(function(obj) {

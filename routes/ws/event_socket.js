@@ -216,9 +216,6 @@ EventSocket.prototype.init = function() {
         }
       });
     });
-  } else {
-    // not multiplexed ws
-    // emit list of subscriptions for queries passed allong
   }
   
   this.socket.once('close', this.onClose.bind(this));
@@ -231,8 +228,49 @@ EventSocket.prototype.init = function() {
       self._parser.add(data);
     }
   };
+};
 
+EventSocket.prototype.confirmWs = function() {
   confirmWs(this.request, this.socket);
+};
+
+EventSocket.prototype._subscribeToTopic = function(topicString, limit) {
+  var topic = new StreamTopic();
+  try {
+    topic.parse(topicString);
+  } catch(err) {
+    return err;
+  }
+
+  if (topic.pubsubIdentifier() === '') {
+    return new Error('Topic must have server and specific topic. Specific topic missing.');
+  }
+
+  var compiled = null;
+  if (topic.streamQuery) {
+    try {
+      var compiler = new JSCompiler();
+      compiled = compiler.compile(topic.streamQuery);
+    } catch(err) {
+      return err;
+    }
+  }
+
+  var subscription = {
+    subscriptionId: ++this._subscriptionIndex,
+    topic: topic,
+    limit: limit,
+    compiledQuery: compiled,
+    count: 0
+  };
+
+  // Set internal ID
+  subscription._id = uuid.v4();
+
+  this._subscriptions.push(subscription);
+  this.emit('subscribe', subscription);
+
+  return true;
 };
 
 EventSocket.prototype._unsubscribe = function(subscriptionId, cb) {
