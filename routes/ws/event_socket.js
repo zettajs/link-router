@@ -106,7 +106,11 @@ EventSocket.prototype.send = function(msg) {
     delete msg.type;
     var topic = new StreamTopic();
     topic.parse(msg.topic);
-    msg.topic = topic._pubsubIdentifier;
+    msg.topic = (topic.isSpecial) ? topic._original : topic._pubsubIdentifier;
+    // 
+    if (!msg.timestamp) {
+      msg.timestamp = new Date().getTime();
+    }
   }
 
   

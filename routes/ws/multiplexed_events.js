@@ -19,6 +19,7 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
     streamEnabled = true;
   } else if (/^\/peer-management$/.test(request.url)) {
     // /peer-management
+    subscriptions.push('_peer/*');
   } else if (/^\/events\?/.test(request.url)) {
     // /events?topic=
   } else if (/^\/servers\/(.+)$/.test(request.url)) {

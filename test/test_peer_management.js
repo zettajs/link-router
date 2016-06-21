@@ -248,8 +248,11 @@ describe('Peer Management API', function() {
       });
       ws.on('message', function(msg) {
         var json = JSON.parse(msg);
+        assert.equal(Object.keys(json).length, 3);
+        assert(json.timestamp);
         if (json.topic === '_peer/disconnect') {
           assert.equal(json.data.id, 'hub.0');
+          assert(json.data.connectionId);
           done();
         }
       });
