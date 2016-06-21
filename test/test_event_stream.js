@@ -133,6 +133,23 @@ describe('Event Streams', function() {
 
     var baseUrl = '/events';
 
+
+    it('sending ping will result in pong message', function(done) {
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      ws.on('open', function() {
+        var msg = { type: 'ping', data: 'test-ping' };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          assert.equal(json.type, 'pong');
+          assert(json.timestamp);
+          assert.equal(json.data, 'test-ping');
+          done();
+        });
+      });
+      ws.on('error', done);
+    });
+
     it('subscribing to a topic receives a subscription-ack', function(done) {
       var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
       ws.on('open', function() {

@@ -77,6 +77,15 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
     cache.wsSender.send(JSON.stringify(msg));
   });
 
+  parser.on('ping', function(msg) {
+    var msg = {
+      type: 'pong',
+      timestamp: new Date().getTime(),
+      data: msg.data
+    };
+    cache.wsSender.send(JSON.stringify(msg));
+  });
+  
   parser.on('subscribe', function(msg) {
     var topic = new StreamTopic();
     try {
