@@ -99,6 +99,17 @@ EventSocket.prototype.checkAndSend = function(msg) {
 };
 
 EventSocket.prototype.send = function(msg) {
+
+  // Rewrite msg for old style
+  if (!this.streamEnabled) {
+    delete msg.subscriptionId;
+    delete msg.type;
+    var topic = new StreamTopic();
+    topic.parse(msg.topic);
+    msg.topic = topic._pubsubIdentifier;
+  }
+
+  
   var str = JSON.stringify(msg);
   if (this._request.headers.host) {
     var host = this._request.headers['host'];

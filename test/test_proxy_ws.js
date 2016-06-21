@@ -95,7 +95,11 @@ describe('Proxy Websockets', function() {
       .peer('hub.1')
       .device(function(d) { return d.type === 'photocell'; })
       .stream('intensity')
-      .subscribe(function() {
+      .subscribe(function(data) {
+        assert.equal(data.topic.indexOf('photocell/'), 0);
+        assert.equal(data.topic.indexOf('/intensity'), 46);
+        assert.equal(typeof data.data, 'number');
+        assert.equal(Object.keys(data).length, 3);
         c.dispose();
         done();
       });
