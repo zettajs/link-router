@@ -1,6 +1,6 @@
 {
   "name": "proxy_server",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "Proxy server component for zetta multi cloud",
   "main": "proxy_server.js",
   "scripts": {
