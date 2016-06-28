@@ -11,7 +11,6 @@ var Handler = module.exports = function(proxy) {
 
 Handler.prototype.handler = function(request, socket, wsReceiver) {
   var self = this;
-
   var streamEnabled = false;
   var subscriptions = []; // list of subscriptions to subscribed to initially
   if (/^\/events$/.test(request.url)) {
@@ -22,6 +21,13 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
     subscriptions.push('_peer/*');
   } else if (/^\/events\?/.test(request.url)) {
     // /events?topic=
+    var parsed = url.parse(request.url, true);
+    if (parsed.query.topic.indexOf('query/') === 0 || parsed.query.topic.indexOf('query:') === 0) {
+      // append * for server to device queries
+      subscriptions.push('*/' + parsed.query.topic);      
+    } else {
+      subscriptions.push(parsed.query.topic);
+    }
   } else if (/^\/servers\/(.+)$/.test(request.url)) {
     // /servers/<targetName>/events?topic=...
     var parsed = url.parse(request.url, true);
@@ -29,14 +35,16 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
 
     if (!parsed.query.topic) {
       // return 400
+      var responseLine = 'HTTP/1.1 400  ' + err.message + '\r\n\r\n\r\n';
+      socket.end(responseLine);
+      return;
     }
-
     subscriptions.push(targetName + '/' + parsed.query.topic);
   }
 
   var client = new EventSocket(request, socket, wsReceiver, { streamEnabled: streamEnabled });
   this._eventBroker.client(client);
-  
+
   var err = null;
   subscriptions.every(function(topic) {
     var ret = client._subscribeToTopic(topic);

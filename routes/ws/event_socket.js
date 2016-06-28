@@ -111,6 +111,16 @@ EventSocket.prototype.send = function(msg) {
     if (!msg.timestamp) {
       msg.timestamp = new Date().getTime();
     }
+
+    var propertiesForDevice = ['class', 'properties', 'links', 'actions'];
+    var isDeviceQueryMsg = propertiesForDevice.every(function(k) {
+      return msg.data[k] !== undefined; 
+    });
+
+    // For device query messages device is at root of message
+    if (isDeviceQueryMsg) {
+      msg = msg.data;
+    }
   }
 
   

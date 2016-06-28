@@ -207,7 +207,7 @@ describe('Queries', function() {
         .end(done);
     })
 
-    it.only('ws connection should return two leds', function(done) {
+    it('ws connection should return two leds', function(done) {
       var parsed = url.parse(proxyUrl);
       parsed.protocol = 'ws:';
       parsed.pathname = '/events';
