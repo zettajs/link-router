@@ -9,7 +9,6 @@ var HttpPeerManagement  = require('./http/peer_management');
 var HttpProxy           = require('./http/proxy_to_target');
 var HttpDeviceQuery     = require('./http/device_query');
 var WsEvents            = require('./ws/events');
-var WsMultiplexedEvents = require('./ws/multiplexed_events');
 var WsPeering           = require('./ws/peering');
 
 module.exports = function(proxy) {
@@ -59,9 +58,7 @@ module.exports = function(proxy) {
   });
 
   // Websocket Routes
- 
-  var wsEvents            = new WsEvents(proxy);
-  var wsMultiplexedEvents = new WsMultiplexedEvents(proxy);
+  var wsMultiplexedEvents = new WsEvents(proxy);
   var wsPeering           = new WsPeering(proxy);
   
   proxy._server.on('upgrade', function(request, socket) {
