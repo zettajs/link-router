@@ -18,6 +18,13 @@ var EventBroker = module.exports = function(proxy) {
       self._connectToTargets(tenantId);
     });
   });
+
+  // Check target connections every 5s incase of a missed service update
+  setInterval(function() {
+    Object.keys(self._clients).forEach(function(tenantId) {
+      self._connectToTargets(tenantId);
+    });
+  }, 5000);
 };
 
 // Add client when it connectes
@@ -112,8 +119,7 @@ EventBroker.prototype._connectToTargets = function(tenantId) {
       connections[serverUrl].close();
     }
   });
-  
-  
+
   activeServers.forEach(function(server) {
     if (connections[server.url] === undefined) {
       connections[server.url] = new TargetConnection(server.url);
@@ -127,6 +133,18 @@ EventBroker.prototype._connectToTargets = function(tenantId) {
         console.log('TargetConnection to ', server.url, 'closed with: ', err);
         // Remove from connections
         delete connections[server.url];
+      });
+
+      // Sync clients subscriptions to TargetConnection
+      var clients = self._clients[tenantId];
+      if (!clients) {
+        return;
+      }
+
+      clients.forEach(function(client) {
+        client._subscriptions.forEach(function(subscription) {
+          connections[server.url].subscribe(subscription);
+        });
       });
     }
   });
