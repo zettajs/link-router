@@ -259,6 +259,10 @@ EventSocket.prototype.confirmWs = function() {
   confirmWs(this.request, this.socket);
 };
 
+EventSocket.prototype.close = function() {
+  this.socket.end();
+};
+
 EventSocket.prototype._subscribeToTopic = function(topicString, limit) {
   var topic = new StreamTopic();
   try {

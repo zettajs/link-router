@@ -123,12 +123,23 @@ EventBroker.prototype._connectToTargets = function(tenantId) {
       connections[server.url].on('message', onDataHandler);
       
       connections[server.url].once('close', function(err) {
-        connections[server.url].removeListener(onDataHandler);
+        connections[server.url].removeListener('message', onDataHandler);
         console.log('TargetConnection to ', server.url, 'closed with: ', err);
         // Remove from connections
         delete connections[server.url];
       });
     }
+  });
+};
+
+EventBroker.prototype._disconnectClients = function(tenantId) {
+  var clients = this._clients[tenantId];
+  if (!clients) {
+    return;
+  }
+
+  clients.forEach(function(client) {
+    client.close();
   });
 };
 
@@ -171,6 +182,10 @@ TargetConnection.prototype._init = function() {
 
   this._conn.once('close', function() {
     self.emit('close');
+  });
+
+  this._conn.once('error', function(err) {
+    self.emit('close', err);
   });
 
   this._conn.on('message', function(data, flags) {
