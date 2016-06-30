@@ -60,7 +60,7 @@ EventSocket.prototype.checkAndSend = function(msg) {
     // Use one sent to client originally
     newMsg.subscriptionId = subscription.subscriptionId;
 
-    if (msg.data) {
+    if (msg.data !== undefined) {
       newMsg.data = msg.data;
     } else {
       // handle device and server /logs stream
