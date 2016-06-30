@@ -935,6 +935,121 @@ describe('Event Streams', function() {
       ws.on('error', done);  
     });
 
+    describe('Auth Filters', function() {
+
+      var setupWs = function(filters, topic, onSubscribe, onData) {
+        
+        var headers = {};
+
+        if (filters[0]) {
+          var allowHeader = filters[0].map(encodeURIComponent).join(';');
+          headers['x-apigee-iot-allow-filter'] = allowHeader;
+        }
+
+        if (filters[1]) {
+          var denyHeader = filters[1].map(encodeURIComponent).join(';');
+          headers['x-apigee-iot-deny-filter'] = denyHeader;
+        }
+
+        var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl, null, { headers: headers });
+        var subscriptionId = null;
+        ws.on('open', function() {
+          var msg = { type: 'subscribe', topic: topic };
+          ws.send(JSON.stringify(msg));
+          ws.on('message', function(buffer) {
+            var json = JSON.parse(buffer);
+            if(json.type === 'subscribe-ack') {
+              assert.equal(json.type, 'subscribe-ack');
+              assert(json.timestamp);
+              assert.equal(json.topic, topic);
+              assert(json.subscriptionId);
+              subscriptionId = json.subscriptionId;
+              
+              setTimeout(onSubscribe, 100);
+            } else {
+              assert.equal(json.type, 'event');
+              assert(json.timestamp);
+              assert.equal(json.subscriptionId, subscriptionId);
+              assert(json.data);
+              onData(json);
+            }
+          });
+        });
+      }
+      
+      it('will return all messages when no filters are given', function(done) {
+        setupWs([], validTopics[0], function() {
+          devices[0].call('turn-on');
+        }, function(json) {
+          done();
+        })
+      })
+      
+      it('will filter messages not explicitly allowed', function(done) {
+        setupWs([['hub.0/led/*/state']], '**', function() {
+          devices[0].call('turn-on');
+        }, function(json) {
+          assert(json.topic.indexOf('/state') > 0);
+          done();
+        })
+      })
+      
+      it('will filter messages explicitly denied', function(done) {
+        setupWs([[], ['hub.0/led/*/state']], '**', function() {
+          devices[0].call('turn-on');
+        }, function(json) {
+          assert(json.topic.indexOf('/state') < 0);
+          done();
+        })
+      })
+      
+      it('will filter messages not explicitly allowed with multiple filters', function(done) {
+        var received = 0;
+        setupWs([['hub.0/led/*/state', 'hub.1/led/*/state']], '**', function() {
+          devices[0].call('turn-on');
+          devices[1].call('turn-on');
+        }, function(json) {
+          received++;
+          assert(json.topic.indexOf('/state') > 0);
+          if (received >= 2) {
+            done();
+          }
+        })
+      })
+      
+      it('will filter messages explicitly denied with multiple filters', function(done) {
+        var received = 0;
+        setupWs([[], ['hub.0/led/*/state', 'hub.1/led/*/state']], '**', function() {
+          devices[0].call('turn-on');
+          devices[1].call('turn-on');
+        }, function(json) {
+          received++;
+          assert(json.topic.indexOf('/state') < 0);
+          if (received >= 2) {
+            done();
+          }
+        })
+      })
+      
+      it('will filter messages that are allowed and also denied', function(done) {
+        setupWs([['hub.0/led/**'], ['hub.0/led/*/state']], '**', function() {
+          devices[0].call('turn-on');
+        }, function(json) {
+          assert(json.topic.indexOf('/state') < 0);
+          done();
+        })
+      })
+      
+      it('will allow messages with semi semicolons in name', function(done) {
+        setupWs([['hub;/**', 'hub.0/led/*/state']], '**', function() {
+          devices[0].call('turn-on');
+        }, function(json) {
+          assert(json.topic.indexOf('/state') > 0);
+          done();
+        })
+      })
+    })
+    
     describe('Protocol Errors', function() {
 
       var makeTopicStringErrorsTest = function(topic) {

@@ -16,11 +16,34 @@ var Handler = module.exports = function(proxy) {
   this._queryCache = {};
 };
 
+function getFilters(request, headerName) {
+  var headers = request.headers[headerName];
+  if (!headers) {
+    return [];
+  }
+
+  return headers.split(';').map(decodeURIComponent).map(StreamTopic.parse);
+}
+
+function getAllowFilters(request) {
+  return getFilters(request, 'x-apigee-iot-allow-filter');
+}
+function getDenyFilters(request) {
+  return getFilters(request, 'x-apigee-iot-deny-filter');
+}
+
 Handler.prototype.connection = function(request, socket, wsReceiver) {
   var self = this;
   var tenantId = getTenantId(request);
-  var cache = this._getCacheObj(tenantId, request, socket);
-
+  
+  try {
+    var cache = this._getCacheObj(tenantId, request, socket);
+  } catch (err) {
+    console.error(err);
+    socket.end('HTTP/1.1 400 Filters malformed\r\n\r\n\r\n');    
+    return;
+  }
+  
 //  self.proxy._statsClient.increment('http.req.wsquery.status.1xx', { tenant: tenantId });
   socket.on('error', function(err) {
     console.error('Ws Event Stream Error:', tenantId, err);
@@ -131,7 +154,7 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
         return;
       }
     }
-
+    
     var subscription = { subscriptionId: ++cache.subscriptionIndex, topic: topic, limit: msg.limit };
     
     cache.subscribe(subscription);
@@ -288,6 +311,20 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
         obj.targetSubscriptions[target.url] = data.subscriptionId;   
       } 
     } else if(data.type == 'event') {
+
+      // Filter messages based on allow and deny filters
+      var allowed = (cache.allowFilters.length === 0) ? true : cache.allowFilters.some(function(filter) {
+        return filter.match(data.topic);
+      });
+
+      var denied = (cache.denyFilters.length === 0) ? false : cache.denyFilters.some(function(filter) {
+        return filter.match(data.topic);
+      });
+
+      if (!allowed || denied) {
+        return;
+      }
+      
       var obj = cache.subscriptions.filter(function(sub) {
         return sub.targetSubscriptions[target.url] && sub.targetSubscriptions[target.url] == data.subscriptionId;  
       })[0];  
@@ -350,6 +387,8 @@ Handler.prototype._getCacheObj = function(tenantId, request, socket) {
     var obj = {
       clientSocket: socket,
       clientRequest: request,
+      allowFilters: getAllowFilters(request),
+      denyFilters: getDenyFilters(request),
       wsSender: new ws.Sender(socket),
       targets: {}, // <targetUrl>: socket
       pending: [], // list of pending http req assoc to this query
