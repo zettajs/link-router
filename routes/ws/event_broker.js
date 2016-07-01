@@ -114,7 +114,7 @@ EventBroker.prototype._connectToTargets = function(tenantId) {
   // Disconnect any targets that are not active
   Object.keys(connections).forEach(function(serverUrl) {
     // If target is not in the active servers disconnect
-    if (!activeServers.some(server => server.url === serverUrl)) {
+    if (!activeServers.some(function(server) { return server.url === serverUrl; })) {
       console.log('Disconnect non valid target', serverUrl);
       connections[serverUrl].close();
     }
