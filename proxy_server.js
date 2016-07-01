@@ -25,7 +25,7 @@ var serviceRegistryClient = new ServiceRegistryClient(opts);
 var routerClient = new RouterClient(opts);
 var versionClient = new VersionClient(opts);
 var statsdHost = process.env.COREOS_PRIVATE_IPV4 || 'localhost';
-var statsClient = new StatsClient(statsdHost + ':8125', {  routerHost: process.env.COREOS_PRIVATE_IPV4 }, { telegraf: usingTelegrafFormat });
+var statsClient = new StatsClient(statsdHost + ':8125', { }, { telegraf: usingTelegrafFormat });
 var targetMonitor = new MonitorService(serviceRegistryClient, { 
   disabled: (process.env.DISABLE_TARGET_MONITOR) ? true : false
 });
