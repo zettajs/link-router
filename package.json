@@ -20,7 +20,7 @@
     "node-uuid": "^1.4.7",
     "rx": "^2.3.25",
     "spdy": "^1.32.5",
-    "stats-client": "^0.2.0",
+    "stats-client": "^0.3.1",
     "ws": "^0.7.1",
     "zetta-events-stream-protocol": "^5.0.0",
     "zetta-rels": "^0.5.0"
