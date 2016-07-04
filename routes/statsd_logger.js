@@ -8,7 +8,10 @@ module.exports = function(client, request, response, handlerName, duration) {
   if (request._targetName) {
     tags.targetName = request._targetName;
   }
-  
-  client.timing('http.req.' + handlerName, duration, tags);
-  client.increment('http.req.' + handlerName + '.status.' + statusCode(response.statusCode), tags);
+
+  tags.path = handlerName;
+  tags.statusCode = response.statusCode;
+
+  client.timing('http.req', duration, tags);
+  client.increment('http.req', tags);
 };
