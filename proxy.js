@@ -331,7 +331,7 @@ Proxy.prototype.addTokenToReqOptions = function(options, targetUrl) {
     options.headers = {};
   }
   
-  options.headers['x-apigee-iot-jwt'] = cipher;
+  options.headers['Authorization'] = cipher;
 };
 
 Proxy.prototype.getSpdyAgent = function(targetUrl) {
