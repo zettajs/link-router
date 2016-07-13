@@ -13,5 +13,4 @@ module.exports = function(client, request, response, handlerName, duration) {
   tags.statusCode = response.statusCode;
 
   client.timing('http.req', duration, tags);
-  client.increment('http.req', tags);
 };

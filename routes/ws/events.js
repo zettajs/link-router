@@ -7,36 +7,60 @@ var Handler = module.exports = function(proxy) {
   this._cache = {};
   this._queryCache = {};
   this._eventBroker = new EventBroker(proxy);
+  this._numberConnected = {}; // { <wsPath>: Number }
+
+
+  // Send gauge for the number of clients connected to each socket type
+  // every 5 sec
+  var self = this;
+  setInterval(function() {
+    Object.keys(self._numberConnected).forEach(function(wsPath) {
+      self.proxy._statsClient.gauge('ws.clients', self._numberConnected[wsPath], { path: wsPath });
+    });
+  }, 5000);
 };
 
 Handler.prototype.handler = function(request, socket, wsReceiver) {
   var self = this;
   var streamEnabled = false;
   var subscriptions = []; // list of subscriptions to subscribed to initially
+
+  var wsPath = 'na';
+  var targetName = null;
+  
   if (/^\/events$/.test(request.url)) {
     // /events for multiplexed
     streamEnabled = true;
+    wsPath = 'multiplexed';
   } else if (/^\/peer-management$/.test(request.url)) {
     // /peer-management
     subscriptions.push('_peer/*');
+    wsPath = 'peer-management';
   } else if (/^\/events\?/.test(request.url)) {
     // /events?topic=
     var parsed = url.parse(request.url, true);
     if (parsed.query.topic.indexOf('query/') === 0 || parsed.query.topic.indexOf('query:') === 0) {
       // append * for server to device queries
-      subscriptions.push('*/' + parsed.query.topic);      
+      subscriptions.push('*/' + parsed.query.topic);
+      wsPath = 'device-query';
     } else {
       subscriptions.push(parsed.query.topic);
+      wsPath = 'events';
     }
   } else if (/^\/servers\/(.+)$/.test(request.url)) {
     // /servers/<targetName>/events?topic=...
     var parsed = url.parse(request.url, true);
-    var targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
-
+    targetName = decodeURIComponent(/^\/servers\/(.+)$/.exec(parsed.pathname)[1].split('/')[0]);
+    wsPath = 'single-topic';
     if (!parsed.query.topic) {
       // return 400
       var responseLine = 'HTTP/1.1 400  ' + err.message + '\r\n\r\n\r\n';
       socket.end(responseLine);
+      var tags = { path: wsPath, statusCode: 400 };
+      if (targetName) {
+        tags.targetName = targetName;
+      }
+      this.proxy._statsClient.increment('ws.req', tags);
       return;
     }
     subscriptions.push(targetName + '/' + parsed.query.topic);
@@ -59,9 +83,32 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
   if (err) {
     var responseLine = 'HTTP/1.1 400  ' + err.message + '\r\n\r\n\r\n';
     socket.end(responseLine);
+
+    var tags = { path: wsPath, statusCode: 400 };
+    if (targetName) {
+      tags.targetName = targetName;
+    }
+    this.proxy._statsClient.increment('ws.req', tags);
     return;
   }
 
   client.confirmWs();
+
+  // Keep track of the number of ws clients connected per socket type
+  if (!this._numberConnected.hasOwnProperty(wsPath)) {
+    this._numberConnected[wsPath] = 0;
+  }
+  this._numberConnected[wsPath]++;
+  client.once('close', function() {
+    self._numberConnected[wsPath]--;
+  });
+  
+
+  // Send connection metric
+  var tags = { path: wsPath, statusCode: 101 };
+  if (targetName) {
+    tags.targetName = targetName;
+  }
+  this.proxy._statsClient.increment('ws.req', tags);
 };
 

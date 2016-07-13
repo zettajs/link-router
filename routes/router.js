@@ -106,6 +106,7 @@ module.exports = function(proxy) {
 
       fakeResponse.statusCode = 404;
       logger(request, fakeResponse);
+      proxy._statsClient.increment('ws.req', { path: 'na', statusCode: 404 });
     }
   });
 };
