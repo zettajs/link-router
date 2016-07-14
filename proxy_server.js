@@ -18,14 +18,19 @@ if (process.env.ETCD_PEER_HOSTS) {
 
 var tenantMgmtApi = process.env.TENANT_MANAGEMENT_API;
 if (!tenantMgmtApi) {
-  throw new Error('Must supply a tenant management api env param with ENANT_MANAGEMENT_API');
+  throw new Error('Must supply a tenant management api env param with TENANT_MANAGEMENT_API');
+}
+
+var usingTelegrafFormat = !!(process.env.INFLUXDB_HOST);
+if (usingTelegrafFormat) {
+  console.log('Using telgraf format.');
 }
 
 var serviceRegistryClient = new ServiceRegistryClient(opts);
 var routerClient = new RouterClient(opts);
 var versionClient = new VersionClient(opts);
 var statsdHost = process.env.COREOS_PRIVATE_IPV4 || 'localhost';
-var statsClient = new StatsClient(statsdHost + ':8125', {  routerHost: process.env.COREOS_PRIVATE_IPV4 });
+var statsClient = new StatsClient(statsdHost + ':8125', { }, { telegraf: usingTelegrafFormat });
 var jwtPlaintextKeys = null;
 
 if (!process.env.JWT_CIPHER_TEXT) {

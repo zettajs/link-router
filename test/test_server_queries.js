@@ -228,7 +228,12 @@ describe('Queries', function() {
       var ws = new WebSocket(url.format(parsed));
       var count = 0;
       ws.on('message', function(data, flags) {
-        JSON.parse(data);
+        var json = JSON.parse(data);
+        assert.equal(Object.keys(json).length, 4);
+        assert(json.class)
+        assert(json.properties)
+        assert(json.actions)
+        assert(json.links)
         count++;
         if (count === 2) {
           done();

@@ -9,7 +9,6 @@ var HttpPeerManagement  = require('./http/peer_management');
 var HttpProxy           = require('./http/proxy_to_target');
 var HttpDeviceQuery     = require('./http/device_query');
 var WsEvents            = require('./ws/events');
-var WsMultiplexedEvents = require('./ws/multiplexed_events');
 var WsPeering           = require('./ws/peering');
 
 module.exports = function(proxy) {
@@ -59,9 +58,7 @@ module.exports = function(proxy) {
   });
 
   // Websocket Routes
- 
-  var wsEvents            = new WsEvents(proxy);
-  var wsMultiplexedEvents = new WsMultiplexedEvents(proxy);
+  var wsMultiplexedEvents = new WsEvents(proxy);
   var wsPeering           = new WsPeering(proxy);
   
   proxy._server.on('upgrade', function(request, socket) {
@@ -89,9 +86,9 @@ module.exports = function(proxy) {
 
     var routes = [
       { regex: /^\/events$/, route: wsMultiplexedEvents }, // /events for multiplexed
-      { regex: /^\/peer-management$/, route: wsEvents }, // /peer-management
-      { regex: /^\/events\?/, route: wsEvents }, // /events?topic=
-      { regex: /^\/servers\/(.+)$/, route: wsEvents }, // /servers/<hub>/events?topic=
+      { regex: /^\/peer-management$/, route: wsMultiplexedEvents }, // /peer-management
+      { regex: /^\/events\?/, route: wsMultiplexedEvents }, // /events?topic=
+      { regex: /^\/servers\/(.+)$/, route: wsMultiplexedEvents }, // /servers/<hub>/events?topic=
     ];
 
     var found = routes.some(function(obj) {
@@ -109,6 +106,7 @@ module.exports = function(proxy) {
 
       fakeResponse.statusCode = 404;
       logger(request, fakeResponse);
+      proxy._statsClient.increment('ws.req', { path: 'na', statusCode: 404 });
     }
   });
 };
