@@ -6,7 +6,6 @@ var VersionClient = require('../clients/version_client');
 var ServiceRegistryClient = require('../clients/service_registry_client');
 var RouterClient = require('../clients/router_client');
 var StatsClient = require('stats-client');
-var TargetMonitor = require('../monitor/service');
 var Rels = require('zetta-rels');
 
 // Fix for Proxy subscribing to SIGs on every test
@@ -43,8 +42,7 @@ describe('Proxy', function() {
     var serviceRegistryClient = new ServiceRegistryClient({ client: etcd });
     var routerClient = new RouterClient({ client: etcd });
     var statsClient = new StatsClient('localhost:8125');
-    var monitor = new TargetMonitor(serviceRegistryClient, { disabled: true });
-    proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, monitor);
+    proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient);
     proxy.listen(0);
     done();
   });
@@ -197,75 +195,5 @@ describe('Proxy', function() {
     });
   });
 
-  describe('Version update', function() {
-    it('allocation should return current version', function(done) {
-      etcd.set('/services/zetta/foo', '{"url":"http://example.com/", "tenantId": "default", "version": "1"}');
-      etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
-      etcd._trigger('/services/zetta', []);
-      proxy._targetAllocation.lookup('default', function(err, serverUrl) {
-        assert.equal('http://example.com/', serverUrl);
-        done();
-      })
-    })
-
-    it('allocation should provision new target when version is updated', function(done) {
-      etcd.set('/services/zetta/foo', '{"url":"http://example.com/", "tenantId": "default", "version": "1"}');
-      etcd.set('/services/zetta/foo2', '{"url":"http://example2.com/", "tenantId": "default", "version": "1"}');
-      etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
-      etcd._trigger('/services/zetta', []);
-      proxy._targetAllocation.lookup('default', function(err, serverUrl) {
-        assert.equal('http://example.com/', serverUrl);
-        etcd._trigger('/zetta/version', JSON.stringify({ version: '2'}));
-        proxy._targetAllocation.lookup('default', function(err, serverUrl) {
-          assert.equal('http://hello.com/', serverUrl);
-          done();
-        });
-      })
-    })
-
-    it('allocation should return error when no targets match current version', function(done) {
-      etcd.set('/services/zetta/foo', '{"url":"http://example.com/", "tenantId": "default", "version": "2"}');
-      etcd.set('/services/zetta/bar', '{"url":"http://hello.com/", "tenantId": "default", "version": "2"}');
-      etcd._trigger('/services/zetta', []);
-      proxy._targetAllocation.lookup('default', function(err, serverUrl) {
-        assert(err);
-        done();
-      })
-    })
-  })
-
-  describe('Target Allocation', function() {
-
-    it('allocation should allocate at most 2 targets', function(done) {
-      etcd.set('/services/zetta/foo:3001', JSON.stringify({"type":"cloud-target","url":"http://foo:3001","created":"2015-04-29T17:55:01.000Z","version":"1"}));
-      etcd.set('/services/zetta/foo:3002', JSON.stringify({"type":"cloud-target","url":"http://foo:3002","created":"2015-04-29T17:55:01.000Z","version":"1"}));
-      etcd.set('/services/zetta/foo:3003', JSON.stringify({"type":"cloud-target","url":"http://foo:3003","created":"2015-04-29T17:55:01.000Z","version":"1"}));
-      etcd._trigger('/services/zetta', []);
-
-      var finished = 0;
-      function check(err, server) {
-        if (err) {
-          throw err;
-        }
-        finished++;
-        if (finished === 3) {
-          var count = 0;
-          Object.keys(etcd.keyValuePairs.services.zetta).forEach(function(key) {
-            var target = JSON.parse(etcd.keyValuePairs.services.zetta[key]);
-            if (target.tenantId === 'default') {
-              count++;
-            }
-          });
-
-          assert.equal(count, 2);
-          done();
-        }
-      }
-      
-      proxy._targetAllocation.lookup('default', check);
-      proxy._targetAllocation.lookup('default', check);
-      proxy._targetAllocation.lookup('default', check);
-    })
-  })
     
 });

@@ -3,17 +3,18 @@ var http = require('http');
 var util = require('util');
 var spdy = require('spdy');
 var async = require('async');
+var jwt = require('jsonwebtoken');
 var EventEmitter = require('events').EventEmitter;
 var RouterCache = require('./router_cache');
 var router = require('./routes/router');
-var TargetAllocation = require('./target_allocation');
 var getBody = require('./utils/get_body');
 
 var Proxy = module.exports = function(serviceRegistryClient,
                                       routerClient,
                                       versionClient,
                                       statsClient,
-                                      targetMonitor) {
+                                      tenantMgmtApi,
+                                      jwtPlaintextKeys) {
 
   EventEmitter.call(this);
 
@@ -24,8 +25,8 @@ var Proxy = module.exports = function(serviceRegistryClient,
   this._currentVersion = null;
   this._routerCache = new RouterCache();
   this._servers = {};
-  this._targetMonitor = targetMonitor;
-  this._targetAllocation = new TargetAllocation(this);
+  this._tenantMgmtApi = tenantMgmtApi;
+  this.jwtPlaintextKeys = jwtPlaintextKeys;
 
   this._spdyCache = { }; // <target>: spdyAgent 
 
@@ -130,8 +131,7 @@ Proxy.prototype.listen = function() {
 Proxy.prototype.activeTargets = function(tenantId) {
   var self = this;
   var activeServers = [];
-
-
+  
   // Get all target servers from routerCache
   this._routerCache.keys(tenantId).forEach(function(obj) {
     activeServers.push(self._routerCache.get(obj.tenantId, obj.targetName));
@@ -142,10 +142,7 @@ Proxy.prototype.activeTargets = function(tenantId) {
   }
   
   return this._servers[tenantId].filter(function(server) {
-    if (server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0) {
-      // Only return online servers
-      return self._targetMonitor.status(server.url);
-    }
+    return (server.version === self._currentVersion || activeServers.indexOf(server.url) >= 0);
   });
 };
 
@@ -159,7 +156,7 @@ Proxy.prototype.targets = function(tenantId) {
   }
 
   return this._servers[tenantId].filter(function(server) {
-    return server.version === self._currentVersion && self._targetMonitor.status(server.url);
+    return server.version === self._currentVersion;
   });
 };
 
@@ -203,6 +200,9 @@ Proxy.prototype.proxyToTarget = function(targetUrl, request, response, options) 
   if (!httpOptions.headers.hasOwnProperty('x-forwarded-proto')) {
     httpOptions.headers['x-forwarded-proto'] = 'http';
   }
+
+  // If needed add jwt to headers
+  this.addTokenToReqOptions(httpOptions, targetUrl);
   
   var target = http.request(httpOptions);
 
@@ -268,6 +268,9 @@ Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
       path: options.path || request.url
     };
 
+    // If needed add jwt to headers
+    self.addTokenToReqOptions(httpOptions, url.format(parsed));
+
     // When specifing array of urls optionally use path on each array entry not request or option path
     if (options.useServersPath) {
       httpOptions.path = parsed.path;
@@ -314,6 +317,21 @@ Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
     }
     return cb(null, results);
   });
+};
+
+Proxy.prototype.addTokenToReqOptions = function(options, targetUrl) {
+  if (!this.jwtPlaintextKeys) {
+    return;
+  }
+  
+  var token = { location: targetUrl };
+  var cipher = jwt.sign(token, this.jwtPlaintextKeys.internal, { expiresIn: 60 });
+
+  if (!options.headers) {
+    options.headers = {};
+  }
+  
+  options.headers['Authorization'] = cipher;
 };
 
 Proxy.prototype.getSpdyAgent = function(targetUrl) {

@@ -119,7 +119,7 @@ MockEtcd.prototype.set = function(key, value, opts, cb) {
 
     root = root[path];
   });
-
+  
   if (cb) {
     cb();
   }

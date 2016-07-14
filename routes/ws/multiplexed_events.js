@@ -208,19 +208,15 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
   var server = url.parse(target.url);
   var request = cache.clientRequest;
   var parsed = url.parse(request.url);
-  var options = {
-    method: request.method,
-    headers: request.headers,
-    hostname: server.hostname,
-    port: server.port,
-    path: parsed.path
-  };
 
   var socketOptions = {
     headers: {
       'host': request.headers['host']
     }
   };
+
+  // Add jwt token if needed
+  this.proxy.addTokenToReqOptions(socketOptions, target.url);
 
   var wsSocket = new ws(target.url.replace('http:', 'ws:') + '/events', null, socketOptions);
   cache.targets[target.url] = null;

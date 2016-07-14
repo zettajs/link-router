@@ -5,14 +5,16 @@ var zrx = require('zrx');
 var Photocell = require('zetta-photocell-mock-driver');
 var StatsClient = require('stats-client');
 var WebSocket = require('ws');
+var redirect = require('zetta-peer-redirect');
 
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
 var MockEtcd = require('./mocks/mock_etcd');
+var MockTenantMgmtApi = require('./mocks/tenant_mgmt_api');
+var RouterUpdater = require('./mocks/routing_updater');
 var VersionClient = require('../clients/version_client');
 var ServiceRegistryClient = require('../clients/service_registry_client');
 var RouterClient = require('../clients/router_client');
-var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
 
 // Fix for Proxy subscribing to SIGs on every test
@@ -26,10 +28,17 @@ describe('Proxy Websockets', function() {
   var proxyUrl = null;
   var newTarget = null;
   var serviceRegistryClient = null;
+
+  beforeEach(function() {
+    etcd = new MockEtcd();
+  })
   
   beforeEach(function(done) {
-    etcd = new MockEtcd();
+    tenantMgmtApi = new MockTenantMgmtApi(etcd);
+    tenantMgmtApi.listen(0, done);
+  })
 
+  beforeEach(function(done) {
     etcd.set('/zetta/version', '{"version":"1"}');
     
     var versionClient = new VersionClient({ client: etcd });
@@ -42,8 +51,11 @@ describe('Proxy Websockets', function() {
     hub.silent();
 
     target.name('target.1');
+    target.use(RouterUpdater('', routerClient, serviceRegistryClient));
+    
     hub.name('hub.1');
     hub.use(Photocell);
+    hub.use(redirect);
 
     target.listen(0, function(err) {
       if(err) {
@@ -54,8 +66,7 @@ describe('Proxy Websockets', function() {
       serviceRegistryClient.add('cloud-target', cloud, '1');
 
       var statsClient = new StatsClient('localhost:8125');
-      var monitor = new TargetMonitor(serviceRegistryClient, { disabled: true });
-      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, monitor); 
+      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, tenantMgmtApi.href()); 
       proxy.listen(0, function(err) {
         if(err) {
           return done(err);
@@ -70,7 +81,7 @@ describe('Proxy Websockets', function() {
           hub.pubsub.subscribe('_peer/connect', function(topic, data) {
             if (!called) {
               called = true;
-              done();
+              setTimeout(done, 10);
             }
           });
         });
@@ -203,6 +214,7 @@ describe('Proxy Websockets', function() {
       .silent()
       .link(proxyUrl)
       .use(Photocell)
+      .use(redirect)
       .listen(0, function() {
 
         var id1 = Object.keys(hub.runtime._jsDevices)[0];

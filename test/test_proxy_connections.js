@@ -3,17 +3,16 @@ var assert = require('assert');
 var request = require('supertest');
 var zetta = require('zetta');
 var StatsClient = require('stats-client');
+var redirect = require('zetta-peer-redirect');
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
 var MockEtcd = require('./mocks/mock_etcd');
+var MockTenantMgmtApi = require('./mocks/tenant_mgmt_api');
+var RouterUpdater = require('./mocks/routing_updater');
 var VersionClient = require('../clients/version_client');
 var ServiceRegistryClient = require('../clients/service_registry_client');
 var RouterClient = require('../clients/router_client');
-var TargetMonitor = require('../monitor/service');
 var Proxy = require('../proxy');
-
-// Fix for Proxy subscribing to SIGs on every test
-process.setMaxListeners(0);
 
 describe('Proxy Connection', function() {
   var hub = null;
@@ -23,15 +22,23 @@ describe('Proxy Connection', function() {
   var proxyUrl = null;
   var newTarget = null;
   var serviceRegistryClient = null;
+  var routerClient = null;
+
+  beforeEach(function() {
+    etcd = new MockEtcd();
+  })
   
   beforeEach(function(done) {
-    etcd = new MockEtcd();
-
+    tenantMgmtApi = new MockTenantMgmtApi(etcd);
+    tenantMgmtApi.listen(0, done);
+  })
+  
+  beforeEach(function(done) {
     etcd.set('/zetta/version', '{"version":"1"}');
     
     var versionClient = new VersionClient({ client: etcd });
     serviceRegistryClient = new ServiceRegistryClient({ client: etcd });
-    var routerClient = new RouterClient({ client: etcd });
+    routerClient = new RouterClient({ client: etcd });
 
     target = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });
     hub = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });
@@ -53,7 +60,10 @@ describe('Proxy Connection', function() {
     hub.silent();
 
     target.name('target.1');
+    target.use(RouterUpdater('', routerClient, serviceRegistryClient));
+
     hub.name('hub.1');
+    hub.use(redirect);
 
     target.listen(0, function(err) {
       if(err) {
@@ -63,8 +73,7 @@ describe('Proxy Connection', function() {
       var cloud = 'http://localhost:' + target.httpServer.server.address().port;
       serviceRegistryClient.add('cloud-target', cloud, '1');
       var statsClient = new StatsClient('localhost:8125');
-      var monitor = new TargetMonitor(serviceRegistryClient, { disabled: true });
-      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, monitor); 
+      proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, tenantMgmtApi.href()); 
       proxy.listen(0, function(err) {
         if(err) {
           return done(err);
@@ -122,6 +131,7 @@ describe('Proxy Connection', function() {
     }
 
     newTarget.name('target.2');
+    newTarget.use(RouterUpdater('', routerClient, serviceRegistryClient));
     newTarget.silent();
 
 
@@ -132,7 +142,7 @@ describe('Proxy Connection', function() {
       
       var cloud = 'http://localhost:' + newTarget.httpServer.server.address().port;
       serviceRegistryClient.add('cloud-target', cloud, '2');
-      etcd.keyValuePairs['/zetta/version'] = { value: '{"version":"2"}' };
+      etcd.set('/zetta/version', '{"version":"2"}');
       etcd._trigger('/zetta/version', '{"version":"2"}');
       etcd._trigger('/services/zetta', '{"foo":"foo"}');
 
@@ -165,41 +175,10 @@ describe('Proxy Connection', function() {
       .end(done);
   });
 
-  it('will return 400 when target returns a 400 on peering', function(done) {
-    var server = http.createServer(function(req, res) {
-      res.statusCode = 400;
-      res.end();
-    });
-    server.on('upgrade', function(request, socket, head) {
-      socket.end('HTTP/1.1 400 Some Error\r\n\r\n\r\n');
-    });
-    
-    server.listen(0, function(err) {
-      var port = server.address().port;
-      etcd.keyValuePairs.services.zetta = {};
-      
-      etcd.keyValuePairs.services.zetta['localhost:' + port] = JSON.stringify({
-        type: 'cloud-target',
-        url: 'http://localhost:' + port,
-        created: new Date(),
-        version: "1"
-      });
-      
-      request(proxy._server)
-        .get('/peers/test?connectionId=1234567890')
-        .set('Upgrade', 'websocket')
-        .set('Connection', 'Upgrade')
-        .set('Sec-WebSocket-Version', '13')
-        .set('Sec-WebSocket-Key', new Buffer('13' + '-' + Date.now()).toString('base64'))
-        .expect(400)
-        .end(done);
-    });    
-  });
-  
-
   it('will allocate 2 targets per tenant', function(done) {
     var target2 = zetta({registry: new MemoryDeviceRegistry(), peerRegistry: new MemoryPeerRegistry() });
     target2.silent();
+    target2.use(redirect);
     target2.name('target.2');
 
     target2.listen(0, function(err) {

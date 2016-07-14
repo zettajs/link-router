@@ -46,6 +46,27 @@ ServiceRegistry.prototype.findAll = function(cb) {
   });
 };
 
+ServiceRegistry.prototype.get = function(serverUrl, cb) {
+  this._client.get(this._etcDirectory + '/' + serverUrl, { consistent: true }, function(err, results) {
+    if (err) {
+      cb(err);
+      return;
+    }
+
+    if (results.node) {
+      var json = null;
+      try {
+        json = JSON.parse(results.node.value);
+      } catch(err) {
+        return cb(err);
+      }
+      cb(null, json);
+    } else {
+      cb();
+    }
+  });
+};
+
 ServiceRegistry.prototype.find = function(type, cb) {
 
   var self = this;

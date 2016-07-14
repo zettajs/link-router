@@ -11,8 +11,10 @@
   "license": "MIT",
   "dependencies": {
     "async": "^1.4.2",
+    "aws-sdk": "^2.3.16",
     "caql": "^0.2.0",
     "caql-js-compiler": "^0.5.0",
+    "jsonwebtoken": "^7.0.0",
     "lru-cache": "^2.7.1",
     "minimatch": "^3.0.0",
     "moment": "^2.13.0",
@@ -31,6 +33,7 @@
     "supertest": "^0.15.0",
     "zetta": "^1.0.0-beta.7",
     "zetta-led-mock-driver": "^0.10.0",
+    "zetta-peer-redirect": "^1.0.1",
     "zetta-photocell-mock-driver": "^0.9.0",
     "zrx": "^0.6.0"
   }
