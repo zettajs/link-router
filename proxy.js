@@ -28,6 +28,7 @@ var Proxy = module.exports = function(serviceRegistryClient,
   this._tenantMgmtApi = tenantMgmtApi;
   this.jwtPlaintextKeys = jwtPlaintextKeys;
 
+  this.enableSpdy = false;
   this._spdyCache = { }; // <target>: spdyAgent 
 
   this.peerActivityTimeout = 60000;
@@ -188,12 +189,15 @@ Proxy.prototype.proxyToTarget = function(targetUrl, request, response, options) 
   var httpOptions = {
     hostname: parsed.hostname,
     port: parsed.port,
-    agent: this.getSpdyAgent(targetUrl),
-    
+
     method: options.method || request.method,
     headers: options.headers || request.headers,
     path: options.path || request.url
   };
+
+  if (this.enableSpdy) {
+    httpOptions.agent = this.getSpdyAgent(targetUrl);
+  }
 
   // If no forwarded protocol then we must set http because zetta will
   // set the ws urls to spdy.
@@ -261,12 +265,15 @@ Proxy.prototype.scatterGatherActive = function(tenantId, request, options, cb) {
     var httpOptions = {
       hostname: parsed.hostname,
       port: parsed.port,
-      agent: self.getSpdyAgent(url.format(parsed)),
-      
+
       method: options.method || request.method,
       headers: options.headers || request.headers,
       path: options.path || request.url
     };
+
+    if (self.enableSpdy) {
+      httpOptions.agent = self.getSpdyAgent(url.format(parsed));
+    }
 
     // If needed add jwt to headers
     self.addTokenToReqOptions(httpOptions, url.format(parsed));

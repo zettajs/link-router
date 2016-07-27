@@ -75,6 +75,10 @@ if (!process.env.JWT_CIPHER_TEXT) {
 
 function startServer() {
   var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, tenantMgmtApi, jwtPlaintextKeys);
+  proxy.enableSpdy = !!(process.env.TARGET_SPDY_ENABLED); // When enabled use spdy connection to target for proxied reqs
+  if (proxy.enableSpdy) {
+    console.log('Using spdy connection to targets');
+  }
   proxy.listen(port, function() {
     console.log('proxy listening on http://localhost:' + port);
   });
