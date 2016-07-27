@@ -122,7 +122,7 @@ EventBroker.prototype._connectToTargets = function(tenantId) {
 
   activeServers.forEach(function(server) {
     if (connections[server.url] === undefined) {
-      connections[server.url] = new TargetConnection(server.url);
+      connections[server.url] = new TargetConnection(server.url, self.proxy);
       var onDataHandler = function(msg) {
         self._onTargetData(tenantId, msg);
       };
@@ -161,8 +161,10 @@ EventBroker.prototype._disconnectClients = function(tenantId) {
   });
 };
 
-function TargetConnection(targetUrl) {
+function TargetConnection(targetUrl, proxy) {
   EventEmitter.call(this);
+
+  this.proxy = proxy;
   
   this.url = targetUrl;
 
@@ -188,6 +190,8 @@ TargetConnection.prototype._init = function() {
       'host': 'link.iot.apigee.net'
     }
   };
+
+  this.proxy.addTokenToReqOptions(socketOptions, this.url);
    
   this._conn = new WebSocket(this.url.replace('http:', 'ws:') + '/events?filterMultiple=true', null, socketOptions);
   this._conn.once('open', function() {
