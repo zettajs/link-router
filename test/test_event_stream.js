@@ -935,6 +935,72 @@ describe('Event Streams', function() {
       ws.on('error', done);  
     });
 
+    it('subscribing to a query with hub for hub will return all devices', function(done) {
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var topic = 'hub.0/query/where type is not missing';
+      var count = 0;
+      var expected = 2;
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert.equal(json.topic, topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+          } else {
+            assert.equal(json.type, 'event');
+            assert(json.timestamp);
+            assert.equal(json.topic, topic);
+            assert.equal(json.subscriptionId, subscriptionId);
+            assert(json.data);
+            count++;
+            if (count === expected) {
+              done();
+            }
+          }
+        });
+      });
+      ws.on('error', done);
+    });
+
+    it('subscribing to a query with * for hub will return all devices', function(done) {
+      var ws = new WebSocket(proxyUrl.replace('http:', 'ws:') + baseUrl);
+      var subscriptionId = null;
+      var topic = '*/query/where type is not missing';
+      var count = 0;
+      var expected = devices.length;
+      ws.on('open', function() {
+        var msg = { type: 'subscribe', topic: topic };
+        ws.send(JSON.stringify(msg));
+        ws.on('message', function(buffer) {
+          var json = JSON.parse(buffer);
+          if(json.type === 'subscribe-ack') {
+            assert.equal(json.type, 'subscribe-ack');
+            assert(json.timestamp);
+            assert.equal(json.topic, topic);
+            assert(json.subscriptionId);
+            subscriptionId = json.subscriptionId;
+          } else {
+            assert.equal(json.type, 'event');
+            assert(json.timestamp);
+            assert.equal(json.topic, topic);
+            assert.equal(json.subscriptionId, subscriptionId);
+            assert(json.data);
+            count++;
+            if (count === expected) {
+              done();
+            }
+          }
+        });
+      });
+      ws.on('error', done);
+    });
+
     describe('Auth Filters', function() {
 
       var setupWs = function(filters, topic, onSubscribe, onData) {
