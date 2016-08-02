@@ -91,7 +91,13 @@ Proxy.prototype._setup = function() {
       });
 
       if (/^\/events\?/.test(request.url)) {
-        wsQueryHandler.wsQuery(request, socket, receiver);
+        var parsed = url.parse(request.url, true);
+        var queryParams = Object.keys(parsed.query);
+        if(queryParams.indexOf('topic') > -1) {
+          wsQueryHandler.wsQuery(request, socket, receiver);
+        } else {
+          socket.end('HTTP/1.1 404 Service Unavailable\r\n\r\n\r\n');
+        }
       } else if (request.url === '/events') {
         wsEventStreamHandler.connection(request, socket, receiver);
       } else if (/^\/peer-management/.test(request.url)) {
