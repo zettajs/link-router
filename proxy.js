@@ -90,16 +90,14 @@ Proxy.prototype._setup = function() {
         receiver.cleanup();
       });
 
-      if (/^\/events\?/.test(request.url)) {
+      if (/^\/events/.test(request.url)) {
         var parsed = url.parse(request.url, true);
         var queryParams = Object.keys(parsed.query);
         if(queryParams.indexOf('topic') > -1) {
           wsQueryHandler.wsQuery(request, socket, receiver);
         } else {
-          socket.end('HTTP/1.1 404 Service Unavailable\r\n\r\n\r\n');
+         wsEventStreamHandler.connection(request, socket, receiver);
         }
-      } else if (request.url === '/events') {
-        wsEventStreamHandler.connection(request, socket, receiver);
       } else if (/^\/peer-management/.test(request.url)) {
         peerManagementHandler.routeWs(request, socket, receiver);
       } else {
