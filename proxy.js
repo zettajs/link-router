@@ -92,7 +92,7 @@ Proxy.prototype._setup = function() {
 
       if (/^\/events/.test(request.url)) {
         var parsed = url.parse(request.url, true);
-        if(parsed.query.hasOwnproperty('topic')) {
+        if(parsed.query.hasOwnProperty('topic')) {
           wsQueryHandler.wsQuery(request, socket, receiver);
         } else {
          wsEventStreamHandler.connection(request, socket, receiver);
