@@ -5,6 +5,8 @@ var zrx = require('zrx');
 var Photocell = require('zetta-photocell-mock-driver');
 var StatsClient = require('stats-client');
 var WebSocket = require('ws');
+var querystring = require('querystring');
+var url = require('url');
 
 var MemoryDeviceRegistry = require('./mocks/memory_device_registry');
 var MemoryPeerRegistry = require('./mocks/memory_peer_registry');
@@ -115,6 +117,38 @@ describe('Proxy Websockets', function() {
           done();
         });
       });  
+  })
+
+  it('will properly send query parameters via proxy.', function(done) {
+      target.httpServer.setupEventSocket = function(ws) {
+        var parsedUrl = url.parse(ws.upgradeReq.url);
+        var parsed = querystring.parse(parsedUrl.query);
+        assert.equal('bar', parsed.foo);
+        ws.close();
+      } 
+      var wsUrl = proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?foo=bar&topic=foo/1/bar';
+      var ws = new WebSocket(wsUrl);
+      ws.on('open', function open() {
+      });
+      ws.on('close', function(data, flags) {
+        done();
+      });
+  })
+  
+  it('will properly send filterMultiple.', function(done) {
+      target.httpServer.setupEventSocket = function(ws) {
+        var parsedUrl = url.parse(ws.upgradeReq.url);
+        var parsed = querystring.parse(parsedUrl.query);
+        assert.equal('true', parsed.filterMultiple);
+        ws.close();
+      } 
+      var wsUrl = proxyUrl.replace('http', 'ws') + '/servers/hub.1/events?filterMultiple=true&topic=foo/1/bar';
+      var ws = new WebSocket(wsUrl);
+      ws.on('open', function open() {
+      });
+      ws.on('close', function(data, flags) {
+        done();
+      });
   })
 
   it('will respond to ping requests', function(done) {
