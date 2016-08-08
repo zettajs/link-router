@@ -35,15 +35,15 @@ function getDenyFilters(request) {
 Handler.prototype.connection = function(request, socket, wsReceiver) {
   var self = this;
   var tenantId = getTenantId(request);
-  
+
   try {
     var cache = this._getCacheObj(tenantId, request, socket);
   } catch (err) {
     console.error(err);
-    socket.end('HTTP/1.1 400 Filters malformed\r\n\r\n\r\n');    
+    socket.end('HTTP/1.1 400 Filters malformed\r\n\r\n\r\n');
     return;
   }
-  
+
 //  self.proxy._statsClient.increment('http.req.wsquery.status.1xx', { tenant: tenantId });
   socket.on('error', function(err) {
     console.error('Ws Event Stream Error:', tenantId, err);
@@ -58,7 +58,7 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
     cache.pending.forEach(function(wsSocket) {
       wsSocket.terminate();
     });
-    
+
     Object.keys(cache.targets).forEach(function(targetUrl) {
       // guard against clients closing before upgrade event is sent
       if (cache.targets[targetUrl] && cache.targets[targetUrl].terminate) {
@@ -67,7 +67,7 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
     });
 
     self.proxy.removeListener('services-update', handleNewTargets);
-    
+
     cache.remove();
   });
 
@@ -87,7 +87,7 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
   servers.forEach(function(server) {
     self._subscribeToTarget(cache, server);
   });
- 
+
   var parser = new EventStreamsParser();
   parser.on('error', function(err, original) {
     var msg = {
@@ -108,7 +108,7 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
     };
     cache.wsSender.send(JSON.stringify(msg));
   });
-  
+
   parser.on('subscribe', function(msg) {
     var topic = new StreamTopic();
     try {
@@ -144,31 +144,31 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
         self._queryCache[topic.streamQuery] = compiled;
       } catch(err) {
         var msg = {
-          type: 'error', 
+          type: 'error',
           code: 400,
           timestamp: new Date().getTime(),
           topic: msg.topic,
-          message: err.message  
+          message: err.message
         }
         cache.wsSender.send(JSON.stringify(msg));
         return;
       }
     }
-    
+
     var subscription = { subscriptionId: ++cache.subscriptionIndex, topic: topic, limit: msg.limit };
-    
+
     cache.subscribe(subscription);
 
     // subscribe to targets
     Object.keys(cache.targets).forEach(function(targetUrl) {
-      var socket = cache.targets[targetUrl];  
+      var socket = cache.targets[targetUrl];
       var obj = {
         topic: subscription.topic.hash(),
-        type: 'subscribe' 
+        type: 'subscribe'
       };
 
       if(subscription.limit) {
-        obj.limit = subscription.limit;  
+        obj.limit = subscription.limit;
       }
 
       if(socket) {
@@ -223,9 +223,9 @@ Handler.prototype.connection = function(request, socket, wsReceiver) {
 
       var data = {
         type: 'unsubscribe',
-        subscriptionId: subscription.targetSubscriptions[targetUrl]  
+        subscriptionId: subscription.targetSubscriptions[targetUrl]
       };
-      socket.send(JSON.stringify(data));  
+      socket.send(JSON.stringify(data));
     });
     cache.unsubscribe(subscription);
     cache.wsSender.send(JSON.stringify(msg));
@@ -254,7 +254,14 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
     }
   };
 
-  var wsSocket = new ws(target.url.replace('http:', 'ws:') + '/events', null, socketOptions);
+
+  var socketUrl = target.url.replace('http:', 'ws:') + '/events';
+  if(parsed.search) {
+    socketUrl = socketUrl + parsed.search;
+  }
+
+
+  var wsSocket = new ws(socketUrl, null, socketOptions);
   cache.targets[target.url] = null;
 
   cache.pending.push(wsSocket);
@@ -263,7 +270,7 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
     var idx = cache.pending.indexOf(wsSocket);
     if (idx >= 0) {
       cache.pending.splice(idx, 1);
-    }    
+    }
   }
 
   wsSocket.on('open', function() {
@@ -274,7 +281,7 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
     cache.subscriptions.forEach(function(subscription) {
       var obj = {
         topic: subscription.linkSubscription.topic.hash(),
-        type: 'subscribe'  
+        type: 'subscribe'
       };
 
       if(subscription.limit) {
@@ -299,19 +306,18 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
     if(flags.binary){
       data = JSON.parse(data.toString());
     } else {
-      data = JSON.parse(data); 
+      data = JSON.parse(data);
     }
 
     if(data.type == 'subscribe-ack') {
       var obj = cache.subscriptions.filter(function(sub) {
-        return sub.linkSubscription.topic.hash() == data.topic;  
-      })[0];  
-      
-      if(obj) {
-        obj.targetSubscriptions[target.url] = data.subscriptionId;   
-      } 
-    } else if(data.type == 'event') {
+        return sub.linkSubscription.topic.hash() == data.topic;
+      })[0];
 
+      if(obj) {
+        obj.targetSubscriptions[target.url] = data.subscriptionId;
+      }
+    } else if(data.type == 'event') {
       // Filter messages based on allow and deny filters
       var allowed = (cache.allowFilters.length === 0) ? true : cache.allowFilters.some(function(filter) {
         return filter.match(data.topic);
@@ -322,29 +328,40 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
       });
 
       if (!allowed || denied) {
+
         return;
       }
-      
+
       var obj = cache.subscriptions.filter(function(sub) {
-        return sub.targetSubscriptions[target.url] && sub.targetSubscriptions[target.url] == data.subscriptionId;  
-      })[0];  
+        return sub.targetSubscriptions[target.url] && sub.targetSubscriptions[target.url] == data.subscriptionId;
+      })[0];
+
+      if(!obj) {
+        obj = cache.subscriptions.filter(function(sub) {
+          return sub.targetSubscriptions[target.url] && data.subscriptionId.indexOf(sub.targetSubscriptions[target.url]) > -1;
+        })[0];
+      }
+
 
       if (!obj) {
         return;
       }
 
-      data.subscriptionId = obj.linkSubscription.subscriptionId;  
+      if(!Array.isArray(data.subscriptionId)){
+        data.subscriptionId = obj.linkSubscription.subscriptionId;
+      }
+
 
       if(!obj.linkSubscription.limit || obj.currentCount < obj.linkSubscription.limit) {
         cache.wsSender.send(JSON.stringify(data));
         obj.currentCount++;
-      } 
-      
+      }
+
       if(obj.linkSubscription.limit && obj.currentCount === obj.linkSubscription.limit) {
         var data = {
           type: 'unsubscribe-ack',
           subscriptionId: obj.linkSubscription.subscriptionId,
-          timestamp: new Date().getTime()  
+          timestamp: new Date().getTime()
         };
         cache.wsSender.send(JSON.stringify(data));
         Object.keys(obj.targetSubscriptions).forEach(function(targetUrl) {
@@ -356,9 +373,9 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
 
           var data = {
             type: 'unsubscribe',
-            subscriptionId: obj.targetSubscriptions[targetUrl]  
+            subscriptionId: obj.targetSubscriptions[targetUrl]
           };
-          socket.send(JSON.stringify(data));  
+          socket.send(JSON.stringify(data));
         });
         cache.unsubscribe(obj);
       }
@@ -373,7 +390,7 @@ Handler.prototype._getCacheObj = function(tenantId, request, socket) {
   if (!this._cache[tenantId]) {
     this._cache[tenantId] = [];
   }
-  
+
   var cacheObj = null;
   var found = this._cache[tenantId].some(function(obj) {
     if (obj.clientSocket === socket) {
@@ -398,9 +415,9 @@ Handler.prototype._getCacheObj = function(tenantId, request, socket) {
         obj.subscriptions.push({ linkSubscription: subscription, currentCount: 0, targetSubscriptions: {} });
       },
       unsubscribe: function(subscription) {
-        var idx = obj.subscriptions.indexOf(subscription);  
+        var idx = obj.subscriptions.indexOf(subscription);
         if(idx >= 0) {
-          obj.subscriptions.splice(idx, 1);  
+          obj.subscriptions.splice(idx, 1);
         }
       },
       remove: function() {
@@ -417,4 +434,3 @@ Handler.prototype._getCacheObj = function(tenantId, request, socket) {
     return cacheObj;
   }
 };
-

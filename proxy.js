@@ -90,10 +90,13 @@ Proxy.prototype._setup = function() {
         receiver.cleanup();
       });
 
-      if (/^\/events\?/.test(request.url)) {
-        wsQueryHandler.wsQuery(request, socket, receiver);
-      } else if (request.url === '/events') {
-        wsEventStreamHandler.connection(request, socket, receiver);
+      if (/^\/events/.test(request.url)) {
+        var parsed = url.parse(request.url, true);
+        if(parsed.query.hasOwnProperty('topic')) {
+          wsQueryHandler.wsQuery(request, socket, receiver);
+        } else {
+         wsEventStreamHandler.connection(request, socket, receiver);
+        }
       } else if (/^\/peer-management/.test(request.url)) {
         peerManagementHandler.routeWs(request, socket, receiver);
       } else {
