@@ -62,7 +62,8 @@ module.exports = function(proxy) {
   var wsPeering           = new WsPeering(proxy);
   
   proxy._server.on('upgrade', function(request, socket) {
-
+    request._tenantId = getTenantId(request);
+    
     // Fake response for logging
     var fakeResponse = {
       statusCode: 101,
@@ -94,7 +95,7 @@ module.exports = function(proxy) {
 
     // handle ping requests
     receiver.onping = function(data, flags) {
-      proxy._statsClient.increment('ws.ping');
+      proxy._statsClient.increment('ws.ping', { tenantId: request._tenantId });
       var sender = new ws.Sender(socket);
       sender.pong(data, { binary: flags.binary === true }, true);
     };
@@ -126,7 +127,7 @@ module.exports = function(proxy) {
 
       fakeResponse.statusCode = 404;
       logger(request, fakeResponse);
-      proxy._statsClient.increment('ws.req', { path: 'na', statusCode: 404 });
+      proxy._statsClient.increment('ws.req', { path: 'na', statusCode: 404, tenantId: request._tenantId });
     }
   });
 };

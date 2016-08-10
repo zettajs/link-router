@@ -7,15 +7,16 @@ var Handler = module.exports = function(proxy) {
   this._cache = {};
   this._queryCache = {};
   this._eventBroker = new EventBroker(proxy);
-  this._numberConnected = {}; // { <wsPath>: Number }
-
+  this._numberConnected = {}; // { <tenantId>: { <wsPath>: Number } }
 
   // Send gauge for the number of clients connected to each socket type
   // every 5 sec
   var self = this;
   setInterval(function() {
-    Object.keys(self._numberConnected).forEach(function(wsPath) {
-      self.proxy._statsClient.gauge('ws.clients', self._numberConnected[wsPath], { path: wsPath });
+    Object.keys(self._numberConnected).forEach(function(tenantId) {
+      Object.keys(self._numberConnected[tenantId]).forEach(function(wsPath) {
+        self.proxy._statsClient.gauge('ws.clients', self._numberConnected[tenantId][wsPath], { path: wsPath, tenantId: tenantId });
+      });
     });
   }, 5000);
 };
@@ -24,7 +25,7 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
   var self = this;
   var streamEnabled = false;
   var subscriptions = []; // list of subscriptions to subscribed to initially
-
+  var tenantId = request._tenantId;
   var wsPath = 'na';
   var targetName = null;
   
@@ -56,7 +57,7 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
       // return 400
       var responseLine = 'HTTP/1.1 400  ' + err.message + '\r\n\r\n\r\n';
       socket.end(responseLine);
-      var tags = { path: wsPath, statusCode: 400 };
+      var tags = { path: wsPath, statusCode: 400, tenantId: tenantId };
       if (targetName) {
         tags.targetName = targetName;
       }
@@ -70,7 +71,7 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
   this._eventBroker.client(client);
 
   client.on('ping', function() {
-    proxy._statsClient.increment('ws.multiplexedping');
+    proxy._statsClient.increment('ws.multiplexedping', { tenantId: tenantId });
   });
 
   var err = null;
@@ -88,7 +89,7 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
     var responseLine = 'HTTP/1.1 400  ' + err.message + '\r\n\r\n\r\n';
     socket.end(responseLine);
 
-    var tags = { path: wsPath, statusCode: 400 };
+    var tags = { path: wsPath, statusCode: 400, tenantId: tenantId };
     if (targetName) {
       tags.targetName = targetName;
     }
@@ -99,17 +100,21 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
   client.confirmWs();
 
   // Keep track of the number of ws clients connected per socket type
-  if (!this._numberConnected.hasOwnProperty(wsPath)) {
-    this._numberConnected[wsPath] = 0;
+  if (!this._numberConnected.hasOwnProperty(tenantId)) {
+    this._numberConnected[tenantId] = {};
   }
-  this._numberConnected[wsPath]++;
+  
+  if (!this._numberConnected[tenantId].hasOwnProperty(wsPath)) {
+    this._numberConnected[tenantId][wsPath] = 0;
+  }
+  this._numberConnected[tenantId][wsPath]++;
   client.once('close', function() {
-    self._numberConnected[wsPath]--;
+    self._numberConnected[tenantId][wsPath]--;
   });
   
 
   // Send connection metric
-  var tags = { path: wsPath, statusCode: 101 };
+  var tags = { path: wsPath, statusCode: 101, tenantId: tenantId };
   if (targetName) {
     tags.targetName = targetName;
   }
