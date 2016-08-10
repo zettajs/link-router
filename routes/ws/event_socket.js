@@ -156,6 +156,9 @@ EventSocket.prototype.init = function() {
     });
 
     this._parser.on('ping', function(msg) {
+      // Emit ping
+      self.emit('ping', msg);
+
       var msg = {
         type: 'pong',
         timestamp: new Date().getTime(),

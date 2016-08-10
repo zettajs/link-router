@@ -69,6 +69,10 @@ Handler.prototype.handler = function(request, socket, wsReceiver) {
   var client = new EventSocket(request, socket, wsReceiver, { streamEnabled: streamEnabled });
   this._eventBroker.client(client);
 
+  client.on('ping', function() {
+    proxy._statsClient.increment('ws.multiplexedping');
+  });
+
   var err = null;
   subscriptions.every(function(topic) {
     var ret = client._subscribeToTopic(topic);
