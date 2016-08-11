@@ -62,7 +62,8 @@ module.exports = function(proxy) {
   var wsPeering           = new WsPeering(proxy);
   
   proxy._server.on('upgrade', function(request, socket) {
-
+    request._tenantId = getTenantId(request);
+    
     // Fake response for logging
     var fakeResponse = {
       statusCode: 101,
@@ -82,7 +83,27 @@ module.exports = function(proxy) {
     }
 
     // Setup WS Receiver to listen for close/ping messages
-    var receiver = initWsParser(socket);
+    var receiver = new ws.Receiver();
+    socket.on('data', function(buf) {
+      receiver.add(buf);
+    });
+
+    // request from client to close websocket
+    receiver.onclose = function() {
+      socket.end();
+    };
+
+    // handle ping requests
+    receiver.onping = function(data, flags) {
+      proxy._statsClient.increment('ws.ping', { tenantId: request._tenantId });
+      var sender = new ws.Sender(socket);
+      sender.pong(data, { binary: flags.binary === true }, true);
+    };
+
+    socket.once('close', function() {
+      receiver.cleanup();
+    });
+
 
     var routes = [
       { regex: /^\/events$/, route: wsMultiplexedEvents }, // /events for multiplexed
@@ -106,32 +127,8 @@ module.exports = function(proxy) {
 
       fakeResponse.statusCode = 404;
       logger(request, fakeResponse);
-      proxy._statsClient.increment('ws.req', { path: 'na', statusCode: 404 });
+      proxy._statsClient.increment('ws.req', { path: 'na', statusCode: 404, tenantId: request._tenantId });
     }
   });
 };
-
-function initWsParser(socket) {
-  var receiver = new ws.Receiver();
-  socket.on('data', function(buf) {
-    receiver.add(buf);
-  });
-
-  // request from client to close websocket
-  receiver.onclose = function() {
-    socket.end();
-  };
-
-  // handle ping requests
-  receiver.onping = function(data, flags) {
-    var sender = new ws.Sender(socket);
-    sender.pong(data, { binary: flags.binary === true }, true);
-  };
-
-  socket.once('close', function() {
-    receiver.cleanup();
-  });
-
-  return receiver;
-}
 
