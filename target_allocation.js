@@ -1,6 +1,6 @@
 var TargetAllocation = module.exports = function(proxy) {
   this.proxy = proxy;
-  this.maxTargets = 2; // max number of targets allocated per tenant
+  this.maxTargets = Number(process.env.TARGETS_PER_TENANT) || 2; // max number of targets allocated per tenant
 
   this.serverIndexes = {};  // { <tenantId>: Int }
   this.pending = {}; // <tenantId> : [cb]
