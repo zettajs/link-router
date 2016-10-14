@@ -194,17 +194,31 @@ MockEtcd.prototype.compareAndSwap = function(key, newRecord, oldRecord, cb) {
 
 //Trigger a watcher event for a key.
 MockEtcd.prototype._trigger = function(key, value) {
-  var watcherValues = this.watchers[key];
-  if(!watcherValues) {
-    this.watchers[key] = [];
-    watcherValues = this.watchers[key];
-  }
-  
-  watcherValues.forEach(function(watcher) {
-    watcher.emit('change', { node: { value: value}});  
+  var self = this;
+  var watcherKeys = Object.keys(this.watchers).filter(function(k) {
+    return key.indexOf(k) === 0;
+  });
+
+  watcherKeys.forEach(function(k) {
+    self.watchers[k].forEach(function(watcher) {
+      watcher.emit('change', { action: 'set', node: { key: key, value: value }});  
+    });
   });
 }
 
+//Trigger a watcher event for a key.
+MockEtcd.prototype._triggerDel = function(key) {
+  var self = this;
+  var watcherKeys = Object.keys(this.watchers).filter(function(k) {
+    return key.indexOf(k) === 0;
+  });
+
+  watcherKeys.forEach(function(k) {
+    self.watchers[k].forEach(function(watcher) {
+      watcher.emit('change', { action: 'delete', node: { key: key }});  
+    });
+  });
+}
 var MockWatcher = function() {
   EventEmitter.call(this);  
 };

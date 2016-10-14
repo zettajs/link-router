@@ -184,7 +184,7 @@ describe('Proxy', function() {
         assert.equal(routerCache.get('default', 'some-peer'), 'http://example.com/');
         done();
       });
-      etcd._trigger('/router/zetta', []);
+      etcd._trigger('/router/zetta/default/some-peer', '{"url":"http://example.com/", "name": "some-peer", "tenantId": "default"}');
     });
 
     it('will update the current targets from an etcd watcher', function() {

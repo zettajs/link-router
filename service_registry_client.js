@@ -15,7 +15,7 @@ var ServiceRegistry = module.exports = function(options) {
   }
 
   this._watcher = this._client.watcher(this._etcDirectory, null, { recursive: true, consistent: true });
-  this._watcher.on('change', function() {
+  this._watcher.on('change', function(ret) {
     self.findAll(function(err, results) {
       if(err) {
         console.log(err);

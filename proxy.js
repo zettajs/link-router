@@ -18,6 +18,7 @@ var confirmWs = require('./confirm_ws');
 var statusCode = require('./status_code');
 var sirenResponse = require('./siren_response');
 var RouterCache = require('./router_cache');
+var RootCache = require('./root_cache');
 var ws = require('ws');
 
 function parseSubscription(hash) {
@@ -41,6 +42,7 @@ var Proxy = module.exports = function(serviceRegistryClient, routerClient, versi
   this._currentVersion = null;
   this._server = http.createServer();
   this._routerCache = new RouterCache();
+  this._rootCache = new RootCache();
   this._cache = {};
   this._subscriptions = {};
   this._servers = {};
@@ -135,14 +137,15 @@ Proxy.prototype._setup = function() {
     self.emit('version-update', self._currentVersion);
   });
 
-  self._routerClient.on('change', function(results) {
-    // Clear cache b/c we have full list of router from results
-    self._routerCache.reset();
 
-    results.forEach(function(obj) {
-      self._routerCache.set(obj.tenantId, obj.name, obj.url);
-    });
-    
+  self._routerClient.on('update', function(tenantId, targetName, obj) {
+    self._routerCache.set(obj.tenantId, obj.name, obj.url);
+    self._disconnectStaleWsClients();
+    self.emit('router-update', self._routerCache);
+  });
+
+  self._routerClient.on('remove', function(tenantId, targetName) {
+    self._routerCache.del(tenantId, targetName);
     self._disconnectStaleWsClients();
     self.emit('router-update', self._routerCache);
   });
@@ -620,7 +623,25 @@ Proxy.prototype._serveRoot = function(request, response) {
     clientAborted = true;
   });
 
-  var entities = this._routerClient.findAll(tenantId, function(err, results) {
+  var getPeers = function (callback) {
+    var results = self._rootCache.get(tenantId);
+    if (results === undefined) {
+      self._routerClient.findAll(tenantId, function(err, results) {
+        if (err) {
+          return callback(err);
+        }
+
+        if (results) {
+          self._rootCache.set(tenantId, results);
+          return callback(null, results);
+        }
+      });
+    } else {
+      callback(null, results);
+    }
+  };
+
+  getPeers(function(err, results) {
     if (clientAborted) {
       return;
     }
