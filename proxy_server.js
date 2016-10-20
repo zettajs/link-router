@@ -5,53 +5,69 @@ var VersionClient = require('./version_client');
 var StatsClient = require('stats-client');
 var MonitorService = require('./monitor/service');
 
-var port = process.env.PORT || 4001;
+var numCPUs = require('os').cpus().length;
+const cluster = require('cluster');
 
-var opts = {
-  host: process.env.COREOS_PRIVATE_IPV4
-};
+if (cluster.isMaster) {
+  // Fork workers.
+  for (var i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
 
-// allow a list of peers to be passed, overides COREOS_PRIVATE_IPV4
-if (process.env.ETCD_PEER_HOSTS) {
-  opts.host = process.env.ETCD_PEER_HOSTS.split(',');
-}
-
-var usingTelegrafFormat = !!(process.env.INFLUXDB_HOST);
-if (usingTelegrafFormat) {
-  console.log('Using telgraf format.');
-}
-
-var serviceRegistryClient = new ServiceRegistryClient(opts);
-var routerClient = new RouterClient(opts);
-var versionClient = new VersionClient(opts);
-var statsdHost = process.env.COREOS_PRIVATE_IPV4 || 'localhost';
-var statsClient = new StatsClient(statsdHost + ':8125', { }, { telegraf: usingTelegrafFormat });
-var targetMonitor = new MonitorService(serviceRegistryClient, { 
-  disabled: (process.env.DISABLE_TARGET_MONITOR) ? true : false
-});
-
-var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, targetMonitor);
-proxy.listen(port, function() {
-  console.log('proxy listening on http://localhost:' + port);
-});
-
-['SIGINT', 'SIGTERM'].forEach(function(signal) {
-  process.on(signal, function() {
-    
-    var count = proxy._peerSockets.length;
-    proxy._peerSockets.forEach(function(peer) {
-      routerClient.remove(peer.tenantId, peer.targetName, function() {
-        count--;
-        if (count === 0) {
-          process.exit();
-        }
-      })
-    });
-    
-    if (count === 0) {
-      process.exit();
-    }
-
+  cluster.on('exit', (worker, code, signal) => {
+    console.log(`worker ${worker.process.pid} died`);
   });
-});
+} else {
+
+  var port = process.env.PORT || 4001;
+
+  var opts = {
+    host: process.env.COREOS_PRIVATE_IPV4
+  };
+
+  // allow a list of peers to be passed, overides COREOS_PRIVATE_IPV4
+  if (process.env.ETCD_PEER_HOSTS) {
+    opts.host = process.env.ETCD_PEER_HOSTS.split(',');
+  }
+
+  var usingTelegrafFormat = !!(process.env.INFLUXDB_HOST);
+  if (usingTelegrafFormat) {
+    console.log('Using telgraf format.');
+  }
+
+  var serviceRegistryClient = new ServiceRegistryClient(opts);
+  var routerClient = new RouterClient(opts);
+  var versionClient = new VersionClient(opts);
+  var statsdHost = process.env.COREOS_PRIVATE_IPV4 || 'localhost';
+  var statsClient = new StatsClient(statsdHost + ':8125', { }, { telegraf: usingTelegrafFormat });
+  var targetMonitor = new MonitorService(serviceRegistryClient, { 
+    disabled: (process.env.DISABLE_TARGET_MONITOR) ? true : false
+  });
+
+  var proxy = new Proxy(serviceRegistryClient, routerClient, versionClient, statsClient, targetMonitor);
+  proxy.listen(port, function() {
+    console.log('proxy listening on http://localhost:' + port);
+  });
+
+  ['SIGINT', 'SIGTERM'].forEach(function(signal) {
+    process.on(signal, function() {
+      
+      var count = proxy._peerSockets.length;
+      proxy._peerSockets.forEach(function(peer) {
+        routerClient.remove(peer.tenantId, peer.targetName, function() {
+          count--;
+          if (count === 0) {
+            process.exit();
+          }
+        })
+      });
+      
+      if (count === 0) {
+        process.exit();
+      }
+
+    });
+  });
+
+}
 
