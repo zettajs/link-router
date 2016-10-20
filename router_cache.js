@@ -15,6 +15,11 @@ RouterCache.prototype.get = function(tenantId, targetName) {
   return this.cache.get(key);
 };
 
+RouterCache.prototype.del = function(tenantId, targetName) {
+  var key = this._hash(tenantId, targetName);
+  return this.cache.del(key);
+};
+
 RouterCache.prototype.set = function(tenantId, targetName, serverUrl) {
   var key = this._hash(tenantId, targetName);
   return this.cache.set(key, serverUrl);

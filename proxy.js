@@ -57,14 +57,13 @@ Proxy.prototype._setup = function() {
     self.emit('version-update', self._currentVersion);
   });
 
-  self._routerClient.on('change', function(results) {
-    // Clear cache b/c we have full list of router from results
-    self._routerCache.reset();
+  self._routerClient.on('update', function(tenantId, targetName, obj) {
+    self._routerCache.set(obj.tenantId, obj.name, obj.url);
+    self.emit('router-update', self._routerCache);
+  });
 
-    results.forEach(function(obj) {
-      self._routerCache.set(obj.tenantId, obj.name, obj.url);
-    });
-    
+  self._routerClient.on('remove', function(tenantId, targetName) {
+    self._routerCache.del(tenantId, targetName);
     self.emit('router-update', self._routerCache);
   });
 

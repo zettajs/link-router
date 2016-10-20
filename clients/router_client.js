@@ -2,6 +2,23 @@ var Etcd = require('node-etcd');
 var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 
+function parseKey(key) {
+  var startPos = '/router/zetta/'.length;
+  var ret = {
+    tenantId: '',
+    name: ''
+  };
+
+  for (var i=startPos; i<key.length; i++) {
+    if (key[i] === '/') {
+      ret.tenantId = key.substr(startPos, i-startPos);
+      ret.name = key.substr(i+1);
+      break;
+    }
+  }
+  return ret;
+}
+
 var RouterClient = module.exports = function(options) {
   EventEmitter.call(this);
   var self = this;
@@ -12,18 +29,23 @@ var RouterClient = module.exports = function(options) {
   } else {
     this._client = options.client;
   }  
-  
+
   this._ttl = 120; // seconds
   this._watcher = this._client.watcher(this._etcDirectory, null, { recursive: true, consistent: true });
-  this._watcher.on('change', function() {
-    self.findAll(function(err, results) {
-      if(err) {
-        console.error(err);
+  this._watcher.on('change', function(ret) {
+    if (ret.action === 'delete') {
+      var obj = parseKey(ret.node.key);
+      self.emit('remove', obj.tenantId, obj.name);
+    } else if (ret.action === 'set') {
+      try {
+        var obj = JSON.parse(ret.node.value);
+      } catch(err) {
+        console.error('RouteClient', err, ret);
         return;
       }
-      
-      self.emit('change', results);  
-    });
+
+      self.emit('update', obj.tenantId, obj.name, obj);
+    }
   });
 };
 util.inherits(RouterClient, EventEmitter);
