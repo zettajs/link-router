@@ -31,7 +31,7 @@ var EventBroker = module.exports = function(proxy) {
 // Add client when it connectes
 EventBroker.prototype.client = function(socket) {
   var self = this;
-  
+
   if (this._clients[socket.tenantId] === undefined) {
     this._clients[socket.tenantId] = [];
   }
@@ -66,7 +66,6 @@ EventBroker.prototype.client = function(socket) {
     var connections = self._targetConnections[socket.tenantId];
     Object.keys(connections).forEach(function(serverUrl) {
       socket._subscriptions.forEach(function(subscription) {
-        console.log('Unsubscribe', subscription.id);
         connections[serverUrl].unsubscribe(subscription);
       });
     });
@@ -124,7 +123,7 @@ EventBroker.prototype._connectToTargets = function(tenantId) {
   Object.keys(connections).forEach(function(serverUrl) {
     // If target is not in the active servers disconnect
     if (!activeServers.some(function(server) { return server.url === serverUrl; })) {
-      console.log('Disconnect non valid target', serverUrl);
+      console.error('Disconnect non valid target', serverUrl);
       connections[serverUrl].close();
     }
   });
@@ -139,7 +138,7 @@ EventBroker.prototype._connectToTargets = function(tenantId) {
       
       connections[server.url].once('close', function(err) {
         connections[server.url].removeListener('message', onDataHandler);
-        console.log('TargetConnection to ', server.url, 'closed with: ', err);
+        console.error('TargetConnection to ', server.url, 'closed with: ', err);
         // Remove from connections
         delete connections[server.url];
       });
@@ -207,8 +206,6 @@ TargetConnection.prototype._init = function() {
     }
   };
 
-  console.log('Init:', self.url);
-  
   this.proxy.addTokenToReqOptions(socketOptions, this.url);
    
   this._conn = new WebSocket(this.url.replace('http:', 'ws:') + '/events?filterMultiple=true', null, socketOptions);
