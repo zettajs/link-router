@@ -206,6 +206,8 @@ TargetConnection.prototype._init = function() {
     }
   };
 
+  console.log('Init:', self.url);
+  
   this.proxy.addTokenToReqOptions(socketOptions, this.url);
    
   this._conn = new WebSocket(this.url.replace('http:', 'ws:') + '/events?filterMultiple=true', null, socketOptions);
