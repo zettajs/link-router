@@ -25,6 +25,7 @@ var EventBroker = module.exports = function(proxy) {
       self._connectToTargets(tenantId);
     });
   }, 5000);
+
 };
 
 // Add client when it connectes
@@ -62,6 +63,13 @@ EventBroker.prototype.client = function(socket) {
     }
 
     // Unsubscribe from subscriptions
+    var connections = self._targetConnections[socket.tenantId];
+    Object.keys(connections).forEach(function(serverUrl) {
+      socket._subscriptions.forEach(function(subscription) {
+        connections[serverUrl].unsubscribe(subscription);
+      });
+    });
+
   });
 };
 
@@ -178,6 +186,13 @@ function TargetConnection(targetUrl, proxy) {
   
   this._conn = null;
 
+  this._metricsInterval = null;
+  this._metrics = {
+    packets: 0,
+    bytes: 0,
+    subscriptions: 0
+  };
+
   this._init();
 }
 util.inherits(TargetConnection, EventEmitter);
@@ -200,17 +215,33 @@ TargetConnection.prototype._init = function() {
       self.subscribe(subscription);
     });
     self._pendingSubscriptions = [];
+
+    self.proxy._statsClient.increment('ws.target.connect', { targetUrl: self.url });
+
+    // record data rate metrics every 10 sec
+    self._metricsInterval = setInterval(function() {
+      self.proxy._statsClient.gauge('ws.target.packets', self._metrics.packets, { targetUrl: self.url });
+      self.proxy._statsClient.gauge('ws.target.bytes', self._metrics.bytes, { targetUrl: self.url });
+      self.proxy._statsClient.gauge('ws.target.subscriptions', self._metrics.subscriptions, { targetUrl: self.url });
+    }, 10000);
   });
 
   this._conn.once('close', function() {
     self.emit('close');
+    clearInterval(self._metricsInterval);
+    self.proxy._statsClient.increment('ws.target.close', { targetUrl: self.url });
   });
 
   this._conn.once('error', function(err) {
+    clearInterval(self._metricsInterval);
+    self.proxy._statsClient.increment('ws.target.close', { targetUrl: self.url });
     self.emit('close', err);
   });
 
   this._conn.on('message', function(data, flags) {
+    self._metrics.packets++;
+    self._metrics.bytes+=data.length;
+
     try {
       data = JSON.parse(data);
     } catch (err) {
@@ -224,6 +255,7 @@ TargetConnection.prototype._init = function() {
         return;
       }
       self._subscriptions[subscription._id] = data.subscriptionId;
+      self._metrics.subscriptions++;
     } else if(data.type === 'event') {
       self.emit('message', data);
     } else if (data.type === 'unsubscribe-ack') {
@@ -278,6 +310,7 @@ TargetConnection.prototype.unsubscribe = function(subscription) {
     }
 
     delete self._subscriptions[subscription._id];
+    self._metrics.subscriptions--;
   });  
 };
 
