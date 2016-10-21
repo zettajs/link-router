@@ -66,6 +66,7 @@ EventBroker.prototype.client = function(socket) {
     var connections = self._targetConnections[socket.tenantId];
     Object.keys(connections).forEach(function(serverUrl) {
       socket._subscriptions.forEach(function(subscription) {
+        console.log('Unsubscribe', subscription.id);
         connections[serverUrl].unsubscribe(subscription);
       });
     });
