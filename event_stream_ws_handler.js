@@ -338,7 +338,15 @@ Handler.prototype._subscribeToTarget = function(cache, target) {
 
       if(!obj) {
         obj = cache.subscriptions.filter(function(sub) {
-          return sub.targetSubscriptions[target.url] && data.subscriptionId.indexOf(sub.targetSubscriptions[target.url]) > -1;
+          if (!sub.targetSubscriptions[target.url]) {
+            return false;
+          }
+
+          if (!data.hasOwnProperty('subscriptionId') || typeof data.subscriptionId.indexOf !== 'function') {
+            return false;
+          }
+
+          return data.subscriptionId.indexOf(sub.targetSubscriptions[target.url]) > -1;
         })[0];
       }
 
