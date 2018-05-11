@@ -1,13 +1,13 @@
 {
-  "name": "proxy_server",
-  "version": "0.1.0",
+  "name": "link-router",
+  "version": "0.6.0",
   "description": "Proxy server component for zetta multi cloud",
   "main": "proxy_server.js",
   "scripts": {
     "test": "./node_modules/.bin/mocha -R spec -t 10000"
   },
-  "author": "",
-  "license": "MIT",
+  "author": "Adam Magaluk <AdamMagaluk@google.com>",
+  "license": "Apache-2.0",
   "dependencies": {
     "async": "^1.4.2",
     "caql": "^0.2.0",
