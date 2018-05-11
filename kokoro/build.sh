@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/sh
-
-docker build -t zetta/zetta-cloud-proxy .
-
+#!/bin/bash
+set -x
+cd git/link-router
