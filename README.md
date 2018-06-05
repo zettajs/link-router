@@ -7,3 +7,7 @@ of Zetta target servers to horizontally scale device connections and support mul
 npm install
 npm run
 ```
+
+## Disclaimer
+
+This is not an officially supported Google product.
