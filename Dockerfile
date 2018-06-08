@@ -3,7 +3,9 @@ MAINTAINER Matthew Dobson
 
 ADD     . /proxy_server
 WORKDIR /proxy_server
-RUN     npm install
+RUN     node -v
+RUN     npm -v
+RUN     npm install --production
 
 ENV    PORT 3000
 EXPOSE 3000

@@ -16,5 +16,5 @@
 
 #!/bin/sh
 
-docker build -t zetta/zetta-cloud-proxy .
+docker build -t zetta/link-router .
 
